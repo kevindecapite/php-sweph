@@ -1,107 +1,448 @@
-# 🤖 KI-Briefing & Kontext-Leitfaden (`KI.md`)
+# 🤖 KI-Briefing & Projektkontext (`KI.md`)
 
-Diese Datei dient als primärer Kontext-Einstieg für KI-Assistenten (LLMs wie ChatGPT, Claude, Gemini), um bei der Weiterentwicklung, dem Refactoring oder Bugfixing dieses Repositories sofort ohne Informationsverlust arbeiten zu können.
-
----
-
-## 🎯 Projekt-Übersicht
-
-* **Name**: `drt04-dev/php-swiss-ephemeris` (`Sweph`)
-* **Zweck**: Ein moderner, objektorientierter, typsicherer und performanter PHP 8.4+ SDK-Wrapper für die C-Extension **Swiss Ephemeris** (`swephp`).
-* **Zielgruppe**: Entwickler, die hochpräzise astronomische und astrologische Berechnungen in PHP 8.4+ / Symfony / Laravel ohne C-Extension-Boilerplate ausführen möchten.
-* **Architektur-Motto**: Striktes OOP, Immutability, Type-Safety und Zero-Legacy-Code.
+Diese Datei dient als primärer Einstiegspunkt für KI-Assistenten (ChatGPT, Claude, Gemini usw.), damit Änderungen am Repository konsistent mit der bestehenden Architektur umgesetzt werden können.
 
 ---
 
-## 🛠️ Tech Stack & Konventionen
+# Projekt
 
-* **PHP-Version**: `>= 8.4` (strikte Nutzung von PHP 8.4 Features!)
-* **Testing**: PHPUnit 11 (`tests/`)
-* **Static Analysis**: PHPStan Level 8 (`src/`)
-* **Namespace**: `Sweph\` (PSR-4)
-* **C-Extension**: `ext-swephp` (geladen via `php_swephp.h` / `swephp.c`)
+**Name**
 
-### Strikte PHP 8.4 Design-Regeln:
-1. **Naming Conventions**: 
-   * Enums nutzen **PascalCase** für Cases (z. B. `Planet::Sun`, `HouseSystem::Placidus`, `CalculationFlag::Speed`).
-   * Backed Enums nutzen wo nötig native `int` oder `string` Values.
-2. **Immutability & Visibility**:
-   * DTOs sind `readonly` oder nutzen **Asymmetric Visibility** (`public private(set)`).
-   * Keine Getter/Setter-Orgien für reine Daten-Eigenschaften.
-3. **Property Hooks**:
-   * Wo nützlich, Property Hooks für abgeleitete oder berechnete Properties verwenden.
-4. **Service Architecture**:
-   * `Sweph\Ephemeris` ist die zentrale Fassade (static methods), welche die Low-Level-Funktionen der C-Extension kapselt, UTC-Zeiten konvertiert und Exceptions wirft.
-   * `EphemerisException` ist die Basis-Exception für alle C-Level-Fehler.
+`drt04-dev/php-swiss-ephemeris`
+
+**Namespace**
+
+```php
+Sweph\
+```
+
+Dieses Repository besteht aus zwei Schichten:
+
+1. **Native PHP-Erweiterung (`ext-swephp`)**
+   - geschrieben in C
+   - kapselt die Swiss Ephemeris (`libswe`)
+   - stellt typsichere PHP-Funktionen bereit
+
+2. **Modernes PHP SDK**
+   - objektorientiert
+   - vollständig typisiert
+   - nutzt ausschließlich PHP 8.4+
+   - kapselt die C-Erweiterung vollständig
+
+Der Endanwender arbeitet ausschließlich mit dem SDK.
 
 ---
 
-## 🐳 Docker Infrastructure (`docker-compose.yml`)
+# Architektur
 
-Für die lokale Entwicklung wird folgende Container-Konfiguration verwendet:
+Die Architektur ist strikt serviceorientiert.
 
-```yaml
-services:
-  app:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-    volumes:
-      - .:/app
-    working_dir: /app
-    tty: true                  # Hält die Standard-Eingabe offen
-    stdin_open: true           # Erlaubt interaktive Shells
-    command: tail -f /dev/null # Hält den Container unendlich im Hintergrund aktiv
-📂 Ordnerstruktur & Verantwortung
-Plaintext
-├── bin/
-│   └── download-ephe.sh       # Lädt .se1 Ephemeriden-Dateien nach /ephe
-├── docker/
-│   └── Dockerfile             # Alpine PHP 8.4 Dev-Environment inkl. swephp C-Build
-├── ext/                       # C-Quellcode der C-Erweiterung (swephp)
-├── src/                       # SDK Quellcode
-│   ├── DTO/                   # CelestialPosition, HouseCalculation (unveränderlich)
-│   ├── Enums/                 # Planet, HouseSystem, CalculationFlag, Aspect, Calendar, SiderealMode
-│   ├── Service/               # AspectCalculator & Business-Logik
-│   ├── Ephemeris.php          # Statischer Core-Service (C-Extension Wrapper)
-│   └── EphemerisException.php # Domain-Exception
-├── tests/                     # PHPUnit Tests
-├── examples/                  # Lauffähige Beispiele
-├── .github/workflows/tests.yml# CI/CD (Baut C-Extension & führt PHPUnit + PHPStan aus)
-├── docker-compose.yml         # Lokale Docker-Entwicklungsumgebung
-└── README.md                  # Öffentliche Dokumentation
-💡 Schnell-Einstieg für die KI (Workflow Commands)
-Sollte der User Fragen stellen oder Code-Änderungen anfordern, können folgende Befehle im Docker-Container ausgeführt / vorausgesetzt werden:
+```
+User
+    │
+    ▼
+SwephFactory
+    │
+    ▼
+Sweph
+ ├── planets()
+ ├── houses()
+ ├── time()
+ ├── fixstars()
+ ├── aspects()
+ └── system()
+    │
+    ▼
+Native C Extension (ext-swephp)
+    │
+    ▼
+Swiss Ephemeris (libswe)
+```
 
-Bash
-# Container bauen/starten
+Die C-Funktionen werden niemals direkt vom Anwender aufgerufen.
+
+---
+
+# Designprinzipien
+
+Das Projekt verfolgt konsequent folgende Prinzipien.
+
+## PHP
+
+- PHP ≥ 8.4
+- `declare(strict_types=1);`
+- keine Legacy-Syntax
+- keine Kompatibilität zu PHP 8.3 oder älter
+
+## Typisierung
+
+- Backed Enums
+- readonly DTOs
+- Value Objects
+- Named Arguments
+- Match Expressions
+
+## Architektur
+
+- kleine Services
+- keine God-Class
+- keine statischen Utility-Klassen
+- Dependency Injection über `SwephFactory`
+
+---
+
+# Coding Style
+
+## Klassen
+
+PascalCase
+
+```
+Planet
+HouseSystem
+SwephFactory
+PlanetService
+```
+
+---
+
+## Methoden
+
+camelCase
+
+```
+calculate()
+calculateUt()
+julianDay()
+planetName()
+```
+
+---
+
+## Enum Cases
+
+Immer PascalCase.
+
+Richtig
+
+```php
+Planet::Sun
+Planet::Moon
+HouseSystem::Placidus
+CalculationFlag::Speed
+Calendar::Gregorian
+```
+
+Falsch
+
+```php
+Planet::SUN
+Planet::MOON
+HouseSystem::PLACIDUS
+```
+
+---
+
+# DTOs
+
+DTOs sind immutable.
+
+Getter werden nicht geschrieben.
+
+Statt
+
+```php
+$position->getLongitude();
+```
+
+immer
+
+```php
+$position->longitude;
+```
+
+---
+
+# Services
+
+Jeder fachliche Bereich besitzt seinen eigenen Service.
+
+Beispiele
+
+```
+PlanetService
+HouseService
+TimeService
+AspectService
+FixstarService
+SystemService
+```
+
+Neue Funktionalität gehört grundsätzlich in den passenden Service.
+
+---
+
+# Factory
+
+SDK-Instanzen werden ausschließlich über die Factory erzeugt.
+
+```php
+$config = new SwephConfig(
+    ephemerisPath: __DIR__.'/ephe',
+);
+
+$sweph = SwephFactory::create($config);
+```
+
+Keine direkte Instanziierung interner Services.
+
+---
+
+# Docker
+
+Die gesamte Entwicklungsumgebung basiert auf Docker.
+
+Es wird niemals vorausgesetzt, dass lokal
+
+- phpize
+- autoconf
+- gcc
+- make
+
+installiert sind.
+
+Alles wird im Container gebaut.
+
+Container starten
+
+```bash
 docker compose up -d --build
+```
 
-# Abhängigkeiten installieren
-docker compose exec app composer install
+Shell öffnen
 
-# Tests ausführen
-docker compose exec app ./vendor/bin/phpunit
+```bash
+docker compose exec app sh
+```
 
-# Statische Analyse ausführen
-docker compose exec app ./vendor/bin/phpstan analyse src
+---
 
-# Ephemeriden laden
-docker compose exec app ./bin/download-ephe.sh
-📌 Aktueller Projektstatus
-✅ C-Extension & Docker Setup: Vollständig. libswe.a kompiliert sauber gegen PHP 8.4.
+# Native Extension
 
-✅ Core SDK: Ephemeris, CelestialPosition, HouseCalculation & Enums sind vollständig implementiert.
+Die Extension wird im Docker-Image kompiliert.
 
-✅ Business Logic: AspectCalculator zur Aspekterkennung vorhanden.
+Build:
 
-✅ Qualitätssicherung: CI/CD (GitHub Actions), PHPUnit 11 Tests und PHPStan Level 8 eingerichtet.
+```
+native/swisseph
+        │
+        ▼
+libswe.a
+        │
+        ▼
+ext/swephp
+        │
+        ▼
+swephp.so
+```
 
-✅ Dokumentation: README.md und KI.md inkl. Symfony 8.1 Integration und Docker-Guide fertiggestellt.
+Nach erfolgreichem Build befindet sich die Extension unter
 
-📋 Anweisung an die KI bei zukünftigen Prompts:
-Behalte den PHP 8.4 Standard bei: Schreibe niemals PHP 7.x/8.0 Syntax. Nutze Match-Expressions, Named Arguments, Backed Enums und Property Hooks.
+```
+/dist/linux/php84/swephp.so
+```
 
-Prüfe Enum-Values: Achte darauf, dass Enum-Cases wie Planet::Sun (PascalCase) und nicht Planet::SUN verwendet werden.
+Sie dient als Release-Artefakt.
 
-C-Extension Kapselung: Gehe nie davon aus, dass der Endnutzer C-Funktionen direkt aufruft. Alles muss über Sweph\Ephemeris oder dedizierte Services laufen.
+---
+
+# Tests
+
+Es existieren zwei Testarten.
+
+```
+tests/
+
+    Unit/
+
+    Integration/
+```
+
+## Unit
+
+keine native Extension erforderlich
+
+## Integration
+
+benötigt
+
+- ext-swephp
+- libswe
+- Ephemeriden
+
+---
+
+Tests
+
+```bash
+composer test
+```
+
+Unit
+
+```bash
+composer test:unit
+```
+
+Integration
+
+```bash
+composer test:integration
+```
+
+---
+
+# Static Analysis
+
+PHPStan
+
+```bash
+composer phpstan
+```
+
+---
+
+# Composer
+
+Installation
+
+```bash
+composer install
+```
+
+Plattform prüfen
+
+```bash
+composer check-platform-reqs
+```
+
+---
+
+# Repository
+
+```
+bin/
+docker/
+ext/
+native/
+src/
+tests/
+examples/
+ephe/
+.github/
+```
+
+---
+
+# src
+
+```
+Contracts/
+DTO/
+Enums/
+Exceptions/
+Factories/
+Service/
+ValueObject/
+
+Sweph.php
+SwephConfig.php
+SwephFactory.php
+```
+
+---
+
+# C-Extension
+
+```
+ext/
+
+config.m4
+config.w32
+
+php_swephp.h
+swephp.c
+swephp_arginfo.h
+```
+
+---
+
+# Native Swiss Ephemeris
+
+```
+native/
+    swisseph/
+```
+
+Die Originalquellen dürfen nicht verändert werden, außer beim Update auf eine neue Swiss-Ephemeris-Version.
+
+---
+
+# Release
+
+Nach jedem erfolgreichen Build wird automatisch erzeugt:
+
+```
+dist/
+
+linux/
+
+php84/
+
+swephp.so
+```
+
+Diese Datei ist das veröffentlichte Linux-Binary.
+
+---
+
+# CI
+
+GitHub Actions
+
+führt aus:
+
+- Docker Build
+- Build der C-Extension
+- PHPUnit
+- PHPStan
+- Composer Platform Checks
+
+---
+
+# Wichtige Regeln
+
+Die KI soll niemals
+
+- Legacy-PHP schreiben
+- Getter für DTOs erzeugen
+- statische Utility-Klassen einführen
+- Enum Cases in Großbuchstaben verwenden
+- C-Funktionen direkt im SDK aufrufen
+
+Die KI soll bevorzugen
+
+- Services
+- Value Objects
+- readonly DTOs
+- Backed Enums
+- Named Arguments
+- kleine klar abgegrenzte Klassen
+
+---
+
+# Ziel des Projekts
+
+Das Repository soll die modernste PHP-Implementierung der Swiss Ephemeris werden.
+
+Die öffentliche API soll vollständig objektorientiert, typsicher und stabil sein, während die C-Extension vollständig im Hintergrund gekapselt bleibt.

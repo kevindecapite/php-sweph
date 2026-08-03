@@ -1,6 +1,7 @@
+# Developer information
 # Aktualisierung der C-Erweiterung für eine neue PHP-Version
 
-Wenn die C-Erweiterung auf eine neue PHP-Version (z. B. PHP 8.4 oder neuer) portiert wird, müssen zunächst die Build-Dateien sowie der eigentliche Extension-Code aktualisiert werden.
+Wenn die C-Erweiterung auf eine neue PHP-Version, beispielsweise PHP 8.4 oder neuer, portiert wird, müssen zunächst die Build-Dateien sowie der eigentliche Extension-Code aktualisiert werden.
 
 Dazu gehören insbesondere:
 
@@ -12,7 +13,7 @@ Dazu gehören insbesondere:
 
 Nach erfolgreicher Anpassung kann die Erweiterung vollständig innerhalb der Docker-Entwicklungsumgebung gebaut und getestet werden.
 
-> **Hinweis:** Der Build wird ausschließlich innerhalb von Docker durchgeführt. Auf dem Host-System werden weder `phpize` noch Compiler oder PHP-Entwicklungspakete benötigt.
+> **Hinweis:** Der Build erfolgt ausschließlich innerhalb von Docker. Auf dem Host-System werden weder `phpize` noch Compiler oder PHP-Entwicklungspakete benötigt.
 
 ---
 
@@ -23,6 +24,7 @@ Die Build-Konfiguration geht von folgender Verzeichnisstruktur aus:
 ```text
 project/
 ├── docker/
+│   └── Dockerfile
 ├── ext/
 │   ├── config.m4
 │   ├── config.w32
@@ -32,40 +34,62 @@ project/
 ├── native/
 │   └── swisseph/
 │       ├── swephexp.h
-│       ├── libswe.a
+│       ├── sweodef.h
 │       ├── sweph.c
 │       ├── swephlib.c
 │       ├── swedate.c
 │       ├── swehouse.c
+│       ├── Makefile
 │       └── ...
-└── src/
+├── src/
+├── tests/
+├── examples/
+├── composer.json
+└── docker-compose.yml
 ```
 
-Die nativen Swiss-Ephemeris-Quellen befinden sich im Verzeichnis:
+Während des Docker-Image-Builds werden die Dateien unter folgenden Pfaden verwendet:
+
+```text
+/opt/swephp/native/swisseph
+/opt/swephp/ext
+```
+
+Im laufenden Entwicklungscontainer wird das Repository über Docker Compose nach `/app` eingebunden:
 
 ```text
 /app/native/swisseph
+/app/ext
 ```
+
+Diese beiden Pfadgruppen dürfen nicht miteinander verwechselt werden:
+
+- Dockerfile-Build: `/opt/swephp/...`
+- laufender Container mit Volume: `/app/...`
 
 ---
 
 # Docker-Image neu bauen
 
-Nach Änderungen an der C-Erweiterung sollte zunächst das Docker-Image neu erstellt werden.
+Nach Änderungen an der C-Erweiterung sollte das Docker-Image ohne Cache neu erstellt werden:
 
 ```bash
 docker compose down --remove-orphans
 
-docker compose build --no-cache app
+docker compose build --no-cache --progress=plain app
 
 docker compose up -d
 ```
 
+Mit `--progress=plain` wird das vollständige Build-Log angezeigt. Das ist besonders wichtig, wenn `configure`, `make` oder das Linken der Extension fehlschlägt.
+
 ---
 
-# Erweiterung im Container kompilieren
+# Erweiterung im laufenden Container manuell kompilieren
 
-Verbinde dich anschließend mit dem Container:
+Für Tests oder eine manuelle Fehleranalyse kann die Erweiterung im laufenden Container neu gebaut werden.
+
+Container-Shell öffnen:
 
 ```bash
 docker compose exec app sh
@@ -73,25 +97,43 @@ docker compose exec app sh
 
 ---
 
-## 1. Swiss Ephemeris Bibliothek neu bauen
+## 1. Swiss-Ephemeris-Bibliothek bauen
 
-Wechsle zunächst in das Verzeichnis der nativen Swiss-Ephemeris-Quellen.
+In das Verzeichnis der nativen Swiss-Ephemeris-Quellen wechseln:
 
 ```bash
 cd /app/native/swisseph
 ```
 
-Vorhandene Build-Artefakte entfernen:
+Das originale `make clean` kann fehlschlagen, wenn beispielsweise das Verzeichnis `setest/` nicht mitkopiert wurde:
 
-```bash
-make clean || true
+```text
+cd: can't cd to setest
+make: *** [Makefile:64: clean] Error 2
 ```
 
-Nun wird die statische Bibliothek mit Position Independent Code erstellt.
+Deshalb sollten die relevanten Build-Artefakte direkt entfernt werden:
+
+```bash
+find . \
+    -maxdepth 1 \
+    -type f \
+    \( \
+        -name '*.o' \
+        -o -name 'libswe.a' \
+        -o -name 'libswe.so' \
+        -o -name 'swetest' \
+    \) \
+    -delete
+```
+
+Nun wird die statische Swiss-Ephemeris-Bibliothek mit Position Independent Code gebaut:
 
 ```bash
 make CFLAGS="-O2 -fPIC" libswe.a
 ```
+
+Die Option `-fPIC` ist erforderlich, weil die statische Bibliothek später in das dynamische PHP-Modul `swephp.so` eingebunden wird.
 
 Prüfen, ob die Bibliothek erfolgreich erstellt wurde:
 
@@ -101,20 +143,42 @@ test -s libswe.a
 ls -lh libswe.a
 ```
 
+Erwartet wird eine vorhandene, nicht leere Datei:
+
+```text
+libswe.a
+```
+
 ---
 
 ## 2. PHP-Erweiterung vorbereiten
 
-Nun in das Extension-Verzeichnis wechseln:
+In das Extension-Verzeichnis wechseln:
 
 ```bash
 cd /app/ext
 ```
 
-Alte Build-Dateien entfernen:
+Alte PHP-Build- und Autoconf-Artefakte entfernen:
 
 ```bash
 phpize --clean || true
+
+rm -rf \
+    autom4te.cache \
+    build \
+    modules \
+    .libs \
+    Makefile \
+    Makefile.fragments \
+    Makefile.objects \
+    config.h \
+    config.h.in \
+    config.log \
+    config.nice \
+    config.status \
+    configure \
+    libtool
 ```
 
 Neue Build-Dateien erzeugen:
@@ -127,7 +191,7 @@ phpize
 
 ## 3. Extension konfigurieren
 
-Die Extension muss mit dem Pfad zu den Swiss-Ephemeris-Quellen konfiguriert werden.
+Die Extension muss mit dem Pfad zu den Swiss-Ephemeris-Quellen konfiguriert werden:
 
 ```bash
 ./configure \
@@ -135,11 +199,35 @@ Die Extension muss mit dem Pfad zu den Swiss-Ephemeris-Quellen konfiguriert werd
     --with-swisseph-src=/app/native/swisseph
 ```
 
-Wenn die Konfiguration erfolgreich war, sollte unter anderem folgende Ausgabe erscheinen:
+Eine erfolgreiche Konfiguration sollte unter anderem Folgendes ausgeben:
 
 ```text
 checking whether to enable the swephp extension... yes, shared
 checking path to the Swiss Ephemeris source directory... /app/native/swisseph
+```
+
+Wird stattdessen Folgendes ausgegeben:
+
+```text
+Swiss Ephemeris source directory missing
+```
+
+wurde `./configure` ohne den erforderlichen Parameter aufgerufen.
+
+Der korrekte Aufruf lautet:
+
+```bash
+./configure \
+    --enable-swephp=shared \
+    --with-swisseph-src=/app/native/swisseph
+```
+
+Nach erfolgreichem `configure` muss ein Makefile vorhanden sein:
+
+```bash
+test -f Makefile
+
+grep -n '^PHP_MODULES' Makefile
 ```
 
 ---
@@ -150,33 +238,101 @@ checking path to the Swiss Ephemeris source directory... /app/native/swisseph
 make -j"$(nproc)" V=1
 ```
 
-Vor der Installation sollte überprüft werden, ob das PHP-Modul tatsächlich erzeugt wurde.
+Anschließend alle erzeugten Extension-Artefakte suchen:
 
 ```bash
-test -f modules/swephp.so
-
-ls -lh modules/swephp.so
+find /app/ext \
+    -type f \
+    \( \
+        -name 'swephp.so' \
+        -o -name 'swephp.la' \
+        -o -name 'swephp.lo' \
+        -o -name 'swephp.o' \
+    \) \
+    -print
 ```
 
-Die Datei
+Je nach Build-Konfiguration kann sich die fertige Datei beispielsweise hier befinden:
 
 ```text
-modules/swephp.so
+/app/ext/modules/swephp.so
 ```
 
-muss vorhanden sein.
+oder:
 
-Falls sie **nicht** existiert, ist der Build fehlgeschlagen und `make install` darf **nicht** ausgeführt werden.
+```text
+/app/ext/.libs/swephp.so
+```
+
+Deshalb sollte nicht ausschließlich davon ausgegangen werden, dass die Datei unter `modules/swephp.so` liegt.
+
+Die tatsächlich erzeugte Datei kann so ermittelt werden:
+
+```bash
+SWEPHP_SO="$(find /app/ext \
+    -type f \
+    -name 'swephp.so' \
+    -print \
+    -quit)"
+
+test -n "${SWEPHP_SO}"
+
+echo "Gefundene Extension: ${SWEPHP_SO}"
+
+ls -lh "${SWEPHP_SO}"
+```
 
 ---
 
-## 5. Erweiterung installieren
+# Extension installieren
 
-```bash
-make install
+In der aktuellen Build-Konfiguration kann `make install` mit folgendem Fehler abbrechen:
+
+```text
+Installing shared extensions:
+/usr/local/lib/php/extensions/no-debug-non-zts-20240924/
+
+cp: cannot stat 'modules/*': No such file or directory
+make: *** [Makefile:87: install-modules] Error 1
 ```
 
-Danach wird die Extension dauerhaft aktiviert.
+Dieser Fehler bedeutet nicht zwingend, dass keine Extension gebaut wurde. Häufig liegt die fertige `swephp.so` lediglich an einem anderen Build-Pfad, beispielsweise unter `.libs/`.
+
+Deshalb wird die Extension direkt in das von PHP gemeldete Extension-Verzeichnis installiert.
+
+Zielverzeichnis ermitteln:
+
+```bash
+php-config --extension-dir
+```
+
+Extension direkt installieren:
+
+```bash
+SWEPHP_SO="$(find /app/ext \
+    -type f \
+    -name 'swephp.so' \
+    -print \
+    -quit)"
+
+EXTENSION_DIR="$(php-config --extension-dir)"
+
+test -n "${SWEPHP_SO}"
+
+mkdir -p "${EXTENSION_DIR}"
+
+install -m 755 \
+    "${SWEPHP_SO}" \
+    "${EXTENSION_DIR}/swephp.so"
+```
+
+Installation prüfen:
+
+```bash
+ls -lh "$(php-config --extension-dir)/swephp.so"
+```
+
+Danach die Extension dauerhaft aktivieren:
 
 ```bash
 docker-php-ext-enable swephp
@@ -204,31 +360,165 @@ Prüfen, ob die Extension geladen wurde:
 docker compose exec app php --ri swephp
 ```
 
-Die Swiss-Ephemeris-Version prüfen:
+Eine erfolgreiche Ausgabe sieht beispielsweise so aus:
+
+```text
+swephp
+
+swephp support => enabled
+extension version => 2.0.0-php84
+library (libswe.a) version => 2.10.03
+default ephemeris file path => .:/users/ephe2/:/users/ephe/
+```
+
+Swiss-Ephemeris-Version direkt prüfen:
 
 ```bash
 docker compose exec app php -r "echo swe_version(), PHP_EOL;"
 ```
 
-Wenn beide Befehle erfolgreich sind, wurde die Extension korrekt installiert.
+PHP-Extension-Verzeichnis anzeigen:
+
+```bash
+docker compose exec app php-config --extension-dir
+```
+
+Installierte Datei prüfen:
+
+```bash
+docker compose exec app sh -lc \
+    'ls -lh "$(php-config --extension-dir)/swephp.so"'
+```
+
+---
+
+# Release-Artefakt erzeugen
+
+Die installierte Extension wird zusätzlich nach `/dist` kopiert. Dieser Ordner dient als Quelle für spätere GitHub-Releases oder manuelle Installationspakete.
+
+Im Container:
+
+```bash
+EXTENSION_DIR="$(php-config --extension-dir)"
+
+mkdir -p /dist/linux/php84
+
+cp \
+    "${EXTENSION_DIR}/swephp.so" \
+    /dist/linux/php84/swephp.so
+```
+
+Prüfen:
+
+```bash
+ls -lh /dist/linux/php84/swephp.so
+```
+
+Beispiel:
+
+```text
+-rwxr-xr-x 1 root root 831K Aug 3 14:21 swephp.so
+```
+
+Prüfsumme erzeugen:
+
+```bash
+cd /dist/linux/php84
+
+sha256sum swephp.so > swephp.so.sha256
+
+cat swephp.so.sha256
+```
+
+---
+
+# Release-Artefakt auf den Host kopieren
+
+Unter Linux, macOS oder PowerShell:
+
+```bash
+docker compose cp app:/dist ./dist
+```
+
+Unter Git Bash auf Windows kann die automatische Pfadumwandlung Probleme verursachen. Ein Containerpfad wie `/dist` kann dabei fälschlich in einen Windows-Pfad umgewandelt werden.
+
+Deshalb unter Git Bash:
+
+```bash
+MSYS_NO_PATHCONV=1 docker compose cp \
+    app:/dist \
+    ./dist
+```
+
+Nur die Extension kopieren:
+
+```bash
+mkdir -p dist/linux/php84
+
+MSYS_NO_PATHCONV=1 docker compose cp \
+    app:/dist/linux/php84/swephp.so \
+    ./dist/linux/php84/swephp.so
+```
+
+Lokale Datei prüfen:
+
+```bash
+ls -lh dist/linux/php84/swephp.so
+```
+
+---
+
+# `/dist` unter Git Bash prüfen
+
+Dieser Befehl kann unter Git Bash fehlschlagen:
+
+```bash
+docker compose exec app ls -lh /dist/linux/php84/
+```
+
+Git Bash wandelt `/dist/...` möglicherweise in einen Windows-Pfad wie diesen um:
+
+```text
+C:/Program Files/Git/dist/linux/php84/
+```
+
+Verwende deshalb:
+
+```bash
+docker compose exec app sh -lc \
+    'ls -lh /dist/linux/php84/'
+```
+
+Alternativ:
+
+```bash
+MSYS_NO_PATHCONV=1 docker compose exec app \
+    ls -lh /dist/linux/php84/
+```
 
 ---
 
 # Composer verwenden
 
-Da das Projekt die PHP-Erweiterung voraussetzt,
+Da das Projekt die PHP-Erweiterung voraussetzt:
 
 ```json
-  "ext-swephp": "*"
+{
+    "require": {
+        "ext-swephp": "*"
+    }
+}
 ```
 
-muss Composer innerhalb des Containers ausgeführt werden.
+muss Composer in einer PHP-Umgebung ausgeführt werden, in der `swephp` geladen ist.
+
+Innerhalb des Containers:
 
 ```bash
 docker compose exec app composer install
 ```
 
-Die Plattformanforderungen überprüfen:
+Plattformanforderungen prüfen:
 
 ```bash
 docker compose exec app composer check-platform-reqs
@@ -250,10 +540,22 @@ ext-swephp
 
 # Tests ausführen
 
-PHPUnit:
+Alle Tests:
 
 ```bash
 docker compose exec app composer test
+```
+
+Unit-Tests:
+
+```bash
+docker compose exec app composer test:unit
+```
+
+Integrationstests:
+
+```bash
+docker compose exec app composer test:integration
 ```
 
 PHPStan:
@@ -262,11 +564,17 @@ PHPStan:
 docker compose exec app composer phpstan
 ```
 
+Alternativ direkt:
+
+```bash
+docker compose exec app ./vendor/bin/phpstan analyse src tests
+```
+
 ---
 
 # Nach Änderungen an der Extension neu bauen
 
-Immer wenn Änderungen an einer der folgenden Dateien vorgenommen werden,
+Nach Änderungen an einer der folgenden Dateien muss die Extension neu gebaut werden:
 
 - `php_swephp.h`
 - `swephp.c`
@@ -274,14 +582,14 @@ Immer wenn Änderungen an einer der folgenden Dateien vorgenommen werden,
 - `config.m4`
 - `config.w32`
 
-oder an den nativen Swiss-Ephemeris-Quellen, muss die Erweiterung vollständig neu gebaut werden.
+Das gilt ebenfalls bei Änderungen an den nativen Swiss-Ephemeris-Quellen.
 
 Empfohlener Ablauf:
 
 ```bash
 docker compose down --remove-orphans
 
-docker compose build --no-cache app
+docker compose build --no-cache --progress=plain app
 
 docker compose up -d
 ```
@@ -317,7 +625,22 @@ docker compose exec app php --ri swephp
 Swiss-Ephemeris-Version:
 
 ```bash
-docker compose exec app php -r "echo swe_version(), PHP_EOL;"
+docker compose exec app php -r \
+    "echo swe_version(), PHP_EOL;"
+```
+
+Installierte Extension:
+
+```bash
+docker compose exec app sh -lc \
+    'ls -lh "$(php-config --extension-dir)/swephp.so"'
+```
+
+Release-Artefakt:
+
+```bash
+docker compose exec app sh -lc \
+    'ls -lh /dist/linux/php84/'
 ```
 
 Composer:
@@ -342,87 +665,119 @@ docker compose exec app composer phpstan
 
 # Fehlerbehebung
 
+## `phpize: command not found`
+
+`phpize` soll nicht auf dem Host ausgeführt werden.
+
+Stattdessen:
+
+```bash
+docker compose exec app sh
+```
+
+Dann im Container:
+
+```bash
+cd /app/ext
+
+phpize
+```
+
+---
+
 ## `Swiss Ephemeris source directory missing`
 
-Die Extension wurde ohne den Parameter
+Die Extension wurde ohne den Parameter `--with-swisseph-src` konfiguriert.
+
+Den tatsächlichen Pfad prüfen:
 
 ```bash
---with-swisseph-src=/app/native/swisseph
+find /app /opt \
+    -name swephexp.h \
+    -type f \
+    2>/dev/null
 ```
 
-konfiguriert.
-
-Den tatsächlichen Pfad der Quellen kann man prüfen:
-
-```bash
-find /app -name swephexp.h
-```
-
-Die Ausgabe sollte sein:
+Im laufenden Container wird typischerweise ausgegeben:
 
 ```text
 /app/native/swisseph/swephexp.h
+```
+
+Der korrekte Configure-Aufruf lautet dann:
+
+```bash
+./configure \
+    --enable-swephp=shared \
+    --with-swisseph-src=/app/native/swisseph
 ```
 
 ---
 
 ## `libswe.a not found`
 
-Die native Bibliothek wurde noch nicht erstellt.
+Die statische Bibliothek wurde noch nicht gebaut.
 
 ```bash
 cd /app/native/swisseph
 
-make clean || true
+find . \
+    -maxdepth 1 \
+    -type f \
+    \( \
+        -name '*.o' \
+        -o -name 'libswe.a' \
+        -o -name 'libswe.so' \
+        -o -name 'swetest' \
+    \) \
+    -delete
 
 make CFLAGS="-O2 -fPIC" libswe.a
 ```
 
 ---
 
-## `modules/swephp.so` fehlt
+## `make clean` scheitert wegen `setest`
 
-Wenn
-
-```bash
-make install
-```
-
-folgende Fehlermeldung erzeugt:
+Beispiel:
 
 ```text
-cp: cannot stat 'modules/*'
+cd setest && make clean
+cd: can't cd to setest
 ```
 
-wurde das Modul nicht erfolgreich gebaut.
+Das `clean`-Target des originalen Makefiles erwartet ein Verzeichnis, das im Docker-Kontext nicht vorhanden ist.
 
-Vor `make install` deshalb immer prüfen:
+Verwende deshalb kein `make clean`, sondern lösche die Artefakte direkt:
 
 ```bash
-test -f modules/swephp.so
+find . \
+    -maxdepth 1 \
+    -type f \
+    \( \
+        -name '*.o' \
+        -o -name 'libswe.a' \
+        -o -name 'libswe.so' \
+        -o -name 'swetest' \
+    \) \
+    -delete
 ```
-
-Existiert die Datei nicht, muss zuerst der Fehler beim `configure`- oder `make`-Schritt behoben werden.
 
 ---
 
-# Vollständiger Build-Ablauf
+## Kein Makefile vorhanden
+
+Beispiel:
+
+```text
+make: No targets specified and no makefile found
+```
+
+Dann ist `./configure` vorher fehlgeschlagen.
+
+Zuerst erneut konfigurieren:
 
 ```bash
-docker compose down --remove-orphans
-
-docker compose build --no-cache app
-
-docker compose up -d
-
-docker compose exec app sh
-
-cd /app/native/swisseph
-
-make clean || true
-
-make CFLAGS="-O2 -fPIC" libswe.a
-
 cd /app/ext
 
 phpize --clean || true
@@ -432,28 +787,170 @@ phpize
 ./configure \
     --enable-swephp=shared \
     --with-swisseph-src=/app/native/swisseph
+```
+
+Erst wenn dieser Befehl erfolgreich war:
+
+```bash
+make -j"$(nproc)" V=1
+```
+
+---
+
+## `modules/swephp.so` fehlt
+
+Die fertige Extension kann sich auch unter einem anderen Build-Pfad befinden.
+
+Nicht nur dies prüfen:
+
+```bash
+test -f modules/swephp.so
+```
+
+Sondern stattdessen suchen:
+
+```bash
+find /app/ext \
+    -type f \
+    -name 'swephp.so' \
+    -print
+```
+
+---
+
+## `make install` meldet `modules/*` fehlt
+
+Beispiel:
+
+```text
+cp: cannot stat 'modules/*'
+make: *** [Makefile:87: install-modules] Error 1
+```
+
+Dann die erzeugte Extension direkt installieren:
+
+```bash
+SWEPHP_SO="$(find /app/ext \
+    -type f \
+    -name 'swephp.so' \
+    -print \
+    -quit)"
+
+EXTENSION_DIR="$(php-config --extension-dir)"
+
+test -n "${SWEPHP_SO}"
+
+install -m 755 \
+    "${SWEPHP_SO}" \
+    "${EXTENSION_DIR}/swephp.so"
+
+docker-php-ext-enable swephp
+```
+
+---
+
+# Vollständiger manueller Build-Ablauf
+
+```bash
+docker compose up -d --build
+
+docker compose exec app sh
+```
+
+Im Container:
+
+```bash
+cd /app/native/swisseph
+
+find . \
+    -maxdepth 1 \
+    -type f \
+    \( \
+        -name '*.o' \
+        -o -name 'libswe.a' \
+        -o -name 'libswe.so' \
+        -o -name 'swetest' \
+    \) \
+    -delete
+
+make CFLAGS="-O2 -fPIC" libswe.a
+
+test -s libswe.a
+
+cd /app/ext
+
+phpize --clean || true
+
+rm -rf \
+    autom4te.cache \
+    build \
+    modules \
+    .libs \
+    Makefile \
+    Makefile.fragments \
+    Makefile.objects \
+    config.h \
+    config.h.in \
+    config.log \
+    config.nice \
+    config.status \
+    configure \
+    libtool
+
+phpize
+
+./configure \
+    --enable-swephp=shared \
+    --with-swisseph-src=/app/native/swisseph
 
 make -j"$(nproc)" V=1
 
-test -f modules/swephp.so
+SWEPHP_SO="$(find /app/ext \
+    -type f \
+    -name 'swephp.so' \
+    -print \
+    -quit)"
 
-make install
+test -n "${SWEPHP_SO}"
+
+EXTENSION_DIR="$(php-config --extension-dir)"
+
+install -m 755 \
+    "${SWEPHP_SO}" \
+    "${EXTENSION_DIR}/swephp.so"
 
 docker-php-ext-enable swephp
 
-exit
+mkdir -p /dist/linux/php84
 
+cp \
+    "${EXTENSION_DIR}/swephp.so" \
+    /dist/linux/php84/swephp.so
+
+cd /dist/linux/php84
+
+sha256sum swephp.so > swephp.so.sha256
+
+exit
+```
+
+Container neu starten und prüfen:
+
+```bash
 docker compose restart app
 
 docker compose exec app php --ri swephp
 
-docker compose exec app php -r "echo swe_version(), PHP_EOL;"
+docker compose exec app php -r \
+    "echo swe_version(), PHP_EOL;"
 
 docker compose exec app composer install
+
+docker compose exec app composer check-platform-reqs
 
 docker compose exec app composer test
 
 docker compose exec app composer phpstan
 ```
 
-Wenn `php --ri swephp` Informationen zur Erweiterung ausgibt und `swe_version()` erfolgreich die Version der Swiss Ephemeris zurückliefert, wurde die Erweiterung erfolgreich gebaut, installiert und steht sowohl PHP als auch Composer vollständig zur Verfügung.
+Wenn `php --ri swephp` die Extension als aktiviert meldet, `swe_version()` die Swiss-Ephemeris-Version zurückgibt und unter `/dist/linux/php84/swephp.so` ein Release-Artefakt vorhanden ist, wurde die Erweiterung erfolgreich gebaut, installiert und für die spätere Verteilung vorbereitet.
