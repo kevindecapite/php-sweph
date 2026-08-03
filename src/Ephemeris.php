@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Sweph;
 
-use Sweph\Enums\Planet;
+use DateTimeInterface;
+use DateTimeZone;
+use Sweph\DTO\CelestialPosition;
+use Sweph\DTO\HouseCalculation;
 use Sweph\Enums\CalculationFlag;
 use Sweph\Enums\Calendar;
 use Sweph\Enums\HouseSystem;
-use Sweph\DTO\CelestialPosition;
-use Sweph\DTO\HouseCalculation;
+use Sweph\Enums\Planet;
 
 /**
  * Die Hauptklasse des SDKs.
@@ -34,12 +36,11 @@ class Ephemeris
             $path = dirname(__DIR__) . '/ephe';
         }
 
-        // Mit führendem Backslash im globalen Namensraum aufrufen!
         \swe_set_ephe_path($path);
         self::$initialized = true;
     }
 
- /**
+    /**
      * Berechnet die astronomische Position eines Himmelskörpers.
      *
      * @param float $julianDay Der Julianische Tag (Zeitpunkt der Berechnung)
@@ -52,23 +53,19 @@ class Ephemeris
         Planet $planet,
         array $flags = []
     ): CelestialPosition {
-
         if (!self::$initialized) {
             self::setEphePath();
         }
 
-        // Falls keine Flags übergeben wurden, nutzen wir standardmäßig die Geschwindigkeitsberechnung!
         if (empty($flags)) {
             $flags = [CalculationFlag::Speed];
         }
 
-        // Bitmaske aus den übergebenen Enums erstellen
         $bitmask = 0;
         foreach ($flags as $flag) {
             $bitmask |= $flag->value;
         }
 
-        // Mit führendem Backslash im globalen Namensraum aufrufen!
         $result = \swe_calc($julianDay, $planet->value, $bitmask);
 
         if (!is_array($result)) {
@@ -84,49 +81,42 @@ class Ephemeris
             );
         }
 
-        return new CelestialPosition(
-            longitude: $result[0] ?? 0.0,
-            latitude: $result[1] ?? 0.0,
-            distance: $result[2] ?? 0.0,
-            longitudeSpeed: $result[3] ?? 0.0,
-            latitudeSpeed: $result[4] ?? 0.0,
-            distanceSpeed: $result[5] ?? 0.0
-        );
+        // Falls C-Extension ein Unter-Array 'calc' zurückgibt, sonst $result direkt nehmen
+        $calcData = $result['calc'] ?? $result;
+
+        return CelestialPosition::fromCArray($calcData);
     }
 
     /**
      * Alias für calculatePlanetPosition, der ein DateTimeInterface entgegennimmt
-     * und es automatisch in den Julianischen Tag für die Berechnung umwandelt.
+     * und es automatisch in UTC umwandelt und den Julianischen Tag berechnet.
      */
     public static function getPlanetPosition(
         Planet $planet,
-        \DateTimeInterface $dateTime,
+        DateTimeInterface $dateTime,
         array $flags = []
     ): CelestialPosition {
-        $hour = (int)$dateTime->format('H');
-        $minute = (int)$dateTime->format('i');
-        $second = (int)$dateTime->format('s');
+        // Garantieren, dass wir in UTC rechnen!
+        $utcDateTime = \DateTimeImmutable::createFromInterface($dateTime)
+            ->setTimezone(new DateTimeZone('UTC'));
+
+        $hour = (int)$utcDateTime->format('H');
+        $minute = (int)$utcDateTime->format('i');
+        $second = (int)$utcDateTime->format('s');
         $decimalHourUtc = $hour + ($minute / 60.0) + ($second / 3600.0);
 
         $julianDay = self::getJulianDay(
-            (int)$dateTime->format('Y'),
-            (int)$dateTime->format('m'),
-            (int)$dateTime->format('d'),
+            (int)$utcDateTime->format('Y'),
+            (int)$utcDateTime->format('m'),
+            (int)$utcDateTime->format('d'),
             $decimalHourUtc
         );
 
-        // Wir leiten die Flags einfach weiter (wird in calculatePlanetPosition auf Standard Speed gemappt)
         return self::calculatePlanetPosition($julianDay, $planet, $flags);
     }
 
     /**
      * Hilfsmethode zur Umrechnung eines Datums in einen Julianischen Tag.
-     *
-     * @param int $year Das Jahr
-     * @param int $month Der Monat
-     * @param int $day Der Tag
-     * @param float $hourUtc Die Dezimalstunde in UTC (z.B. 12.5 für 12:30 Uhr)
-     * @param Calendar $calendar Das Kalendersystem (Standard: Gregorianisch)
      */
     public static function getJulianDay(
         int $year,
@@ -138,15 +128,8 @@ class Ephemeris
         return \swe_julday($year, $month, $day, $hourUtc, $calendar->value);
     }
 
-
     /**
      * Berechnet die Häuserspitzen und astrologischen Achsen.
-     *
-     * @param float $julianDay Der Julianische Tag (Zeitpunkt der Berechnung)
-     * @param float $latitude Die geografische Breite (z.B. 52.5200 für Berlin)
-     * @param float $longitude Die geografische Länge (z.B. 13.4050 für Berlin)
-     * @param HouseSystem $system Das zu verwendende Häusersystem (Standard: Placidus)
-     * @return HouseCalculation Das strukturierte und validierte Datenobjekt
      */
     public static function calculateHouses(
         float $julianDay,
@@ -158,52 +141,30 @@ class Ephemeris
             self::setEphePath();
         }
 
-        $cusps = [];
-        $ascmc = [];
-
-        // hsys erwartet den ASCII-Wert des Systems (als Integer-Wert des ersten Chars)
         $hsysChar = ord($system->value);
 
-        // Native C-Funktion aufrufen:
-        $result = \swe_houses($julianDay, $latitude, $longitude, $hsysChar, $cusps, $ascmc);
+        // Aufruf der C-Extension (Rückgabe als assoziatives Array)
+        $result = \swe_houses($julianDay, $latitude, $longitude, $hsysChar);
 
-        if ($result < 0) {
+        if (!is_array($result) || (isset($result['rc']) && $result['rc'] < 0)) {
             throw new EphemerisException("Fehler bei der Berechnung der Häuserspitzen.");
         }
 
-        // Wir bereinigen das cusps-Array, sodass wir ein sauberes 1-12 indiziertes Array erhalten
-        $formattedCusps = [];
-        for ($i = 1; $i <= 12; $i++) {
-            $formattedCusps[$i] = $cusps[$i] ?? 0.0;
-        }
-
-        // Rückgabe unseres brandneuen DTOs
-        return new HouseCalculation(
-            cusps: $formattedCusps,
-            ascendant: $ascmc[0] ?? 0.0,
-            mc: $ascmc[1] ?? 0.0,
-            armc: $ascmc[2] ?? 0.0,
-            vertex: $ascmc[3] ?? 0.0
+        return HouseCalculation::fromCArrays(
+            $result['cusps'] ?? [],
+            $result['ascmc'] ?? []
         );
     }
 
-    /**
-     * Aktiviert das Ayanamsa für siderische Berechnungen.
-     * * @param int $sidMode Der siderische Modus (z.B. 0 für Lahiri, siehe swisseph-Doku)
-     */
     public static function setSiderealMode(int $sidMode = 0): void
     {
         if (!self::$initialized) {
             self::setEphePath();
         }
 
-        // Native C-Funktion aufrufen
         \swe_set_sid_mode($sidMode, 0.0, 0.0);
     }
 
-    /**
-     * Berechnet den aktuellen Ayanamsa-Wert (die Verschiebung) für einen Julianischen Tag.
-     */
     public static function getAyanamsa(float $julianDay): float
     {
         if (!self::$initialized) {
@@ -213,12 +174,11 @@ class Ephemeris
         return \swe_get_ayanamsa($julianDay);
     }
 
-    /**
-     * Schließt alle geöffneten Ephemeriden-Dateien und gibt Speicher frei.
-     */
     public static function close(): void
     {
-        \swe_close();
+        if (function_exists('swe_close')) {
+            \swe_close();
+        }
         self::$initialized = false;
     }
 }

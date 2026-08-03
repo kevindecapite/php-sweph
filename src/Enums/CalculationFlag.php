@@ -31,4 +31,30 @@ enum CalculationFlag: int
     case Barycentric = 16384;      // SEFLG_BARYCENTRIC (Baryzentrische statt geozentrische Berechnungen)
     case CartesianXYZ = 65536;     // SEFLG_XYZ (Gibt kartesische XYZ-Koordinaten statt Kugelkoordinaten zurück)
     case Radians = 131072;         // SEFLG_RADIANS (Rückgabe in Bogenmaß statt in Grad)
+
+
+    case TruePosition = 16;    // SEFLG_TRUEPOS
+    case J2000 = 32;           // SEFLG_J2000
+    case XYZ = 4096;           // SEFLG_XYZ
+
+    /**
+     * Kombiniert mehrere CalculationFlag-Instanzen zu einer Bitmaske.
+     */
+    public static function combine(self ...$flags): int
+    {
+        $mask = 0;
+        foreach ($flags as $flag) {
+            $mask |= $flag->value;
+        }
+
+        return $mask;
+    }
+
+    /**
+     * Prüft, ob ein bestimmtes Flag in einer Bitmaske enthalten ist.
+     */
+    public function isSetIn(int $mask): bool
+    {
+        return ($mask & $this->value) === $this->value;
+    }
 }

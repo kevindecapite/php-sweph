@@ -15,11 +15,23 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Setup PHP
-      uses: shivamurthyu/setup-php@v2
+      uses: shivammathur/setup-php@v2
       with:
         php-version: '8.4'
         coverage: none
         tools: composer:v2
+
+    - name: Get Composer Cache Directory
+      id: composer-cache
+      run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+    - name: Cache Composer Dependencies
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-composer-
 
     - name: Install Build Dependencies
       run: |
@@ -33,7 +45,7 @@ jobs:
         ./configure --enable-swephp
         make
         sudo make install
-        echo "extension=swephp.so" | sudo tee $(php --ini | grep "Loaded Configuration" | sed -e "s|.*:\s*||")
+        echo "extension=swephp.so" | sudo tee "$(php-config --ini-dir)/20-swephp.ini"
 
     - name: Verify PHP Extension Installation
       run: php -m | grep swephp
@@ -46,6 +58,9 @@ jobs:
 
     - name: Download Ephemeris Files
       run: ./bin/download-ephe.sh
+
+    - name: Run Static Analysis (PHPStan)
+      run: ./vendor/bin/phpstan analyse src --level=8
 
     - name: Run Test Suite
       run: ./vendor/bin/phpunit

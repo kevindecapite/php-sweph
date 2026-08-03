@@ -6,33 +6,37 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use Sweph\Ephemeris;
 use Sweph\Enums\Planet;
+use Sweph\EphemerisException;
 
-$ephemeris = new Ephemeris();
 $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
 
-echo "=== Rückläufigkeits-Check (UTC: {$now->format('Y-m-d H:i:s')}) ===\n\n";
+echo "=== Rückläufigkeits-Check ({$now->format('Y-m-d H:i:s')} UTC) ===\n\n";
 
-$planetsToCheck = [
-    Planet::MERCURY,
-    Planet::VENUS,
-    Planet::MARS,
-    Planet::JUPITER,
-    Planet::SATURN,
-    Planet::URANUS,
-    Planet::NEPTUNE,
-    Planet::PLUTO
-];
+try {
+    $planets = [
+        Planet::Mercury,
+        Planet::Venus,
+        Planet::Mars,
+        Planet::Jupiter,
+        Planet::Saturn,
+        Planet::Uranus,
+        Planet::Neptune,
+        Planet::Pluto,
+    ];
 
-foreach ($planetsToCheck as $planet) {
-    try {
-        $position = $ephemeris->getPlanetPosition($planet, $now);
+    foreach ($planets as $planet) {
+        $pos = Ephemeris::getPlanetPosition($planet, $now);
+        $isRetrograde = $pos->longitudeSpeed < 0.0;
 
-        $status = $position->isRetrograde()
-            ? "🔴 RÜCKLÄUFIG (Geschwindigkeit: " . round($position->longitudeSpeed, 4) . "°/Tag)"
-            : "🟢 Direktläufig (Geschwindigkeit: +" . round($position->longitudeSpeed, 4) . "°/Tag)";
-
-        printf("%-10s : %s\n", $planet->name, $status);
-    } catch (\Sweph\EphemerisException $e) {
-        echo "Fehler bei {$planet->name}: {$e->getMessage()}\n";
+        printf(
+            "%-10s | Speed: %6.3f°/Tag | Status: %s\n",
+            $planet->name,
+            $pos->longitudeSpeed,
+            $isRetrograde ? "🔴 RÜCKLÄUFIG (Retrograde)" : "🟢 DIREKT"
+        );
     }
+} catch (EphemerisException $e) {
+    echo "Fehler: " . $e->getMessage() . "\n";
+} finally {
+    Ephemeris::close();
 }

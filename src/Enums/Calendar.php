@@ -9,6 +9,22 @@ namespace Sweph\Enums;
  */
 enum Calendar: int
 {
-    case JULIAN = 0;    // SE_JUL_CAL
-    case GREGORIAN = 1; // SE_GREG_CAL
+    case Julian = 0;    // SE_JUL_CAL
+    case Gregorian = 1; // SE_GREG_CAL
+
+    /**
+     * Gibt an, ob es sich um den gregorianischen Kalender handelt.
+     */
+    public function isGregorian(): bool
+    {
+        return $this === self::Gregorian;
+    }
+
+    /**
+     * Gibt an, ob es sich um den julianischen Kalender handelt.
+     */
+    public function isJulian(): bool
+    {
+        return $this === self::Julian;
+    }
 }

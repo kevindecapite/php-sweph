@@ -1,4 +1,17 @@
-ARG_ENABLE("sweph", "Swiss Ephemeris support", "no");
+// config.w32 for extension swephp
+
+ARG_WITH("sweph", "Swiss Ephemeris support", "no");
+
 if (PHP_SWEPH != "no") {
-    EXTENSION("sweph", "sweph.c", true);
+    // 1. Header-Pfad hinzufügen (zeigt auf den C-Quellcode der Swiss Ephemeris)
+    ADD_FLAG("CFLAGS_SWEPH", "/I" + configure_module_dirname + "/src");
+
+    // 2. C-Quelldatei der Extension hinzufügen
+    EXTENSION("swephp", "swephp.c", PHP_SWEPH_SHARED, "/I" + configure_module_dirname);
+
+    // 3. Optional: Falls du libswe als vorkompilierte .lib einbindest:
+    // CHECK_LIB("libswe.lib", "swephp", PHP_SWEPH);
+
+    // Modul-Makro definieren
+    AC_DEFINE("HAVE_SWEPH", 1, "Swiss Ephemeris support");
 }

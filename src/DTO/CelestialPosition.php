@@ -18,12 +18,12 @@ class CelestialPosition
      * @param float $distanceSpeed Tägliche Änderung der Entfernung (AE pro Tag)
      */
     public function __construct(
-        public private(set) float $longitude,
-        public private(set) float $latitude,
-        public private(set) float $distance,
-        public private(set) float $longitudeSpeed,
-        public private(set) float $latitudeSpeed,
-        public private(set) float $distanceSpeed,
+        private(set) float $longitude,
+        private(set) float $latitude,
+        private(set) float $distance,
+        private(set) float $longitudeSpeed,
+        private(set) float $latitudeSpeed,
+        private(set) float $distanceSpeed,
     ) {}
 
     /**
@@ -32,5 +32,22 @@ class CelestialPosition
     public function isRetrograde(): bool
     {
         return $this->longitudeSpeed < 0.0;
+    }
+
+    /**
+     * Erstellt eine Instanz direkt aus dem rohen 6-Elemente-Array der C-Extension (swe_calc / swe_calc_ut).
+     *
+     * @param array<int, float> $data
+     */
+    public static function fromCArray(array $data): self
+    {
+        return new self(
+            longitude: $data[0] ?? 0.0,
+            latitude: $data[1] ?? 0.0,
+            distance: $data[2] ?? 0.0,
+            longitudeSpeed: $data[3] ?? 0.0,
+            latitudeSpeed: $data[4] ?? 0.0,
+            distanceSpeed: $data[5] ?? 0.0,
+        );
     }
 }

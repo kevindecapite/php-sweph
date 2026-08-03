@@ -1,49 +1,34 @@
-dnl $Id$
 dnl config.m4 for extension swephp
 
-dnl Comments in this file start with the string 'dnl'.
-dnl Remove where necessary. This file will not work
-dnl without editing.
-
-dnl If your extension references something external, use with:
-
-PHP_ARG_WITH(sweph, for libswe support,
-dnl Make sure that the comment is aligned:
-[  --with-sweph[=DIR]             Include sweph support])
-
-dnl Otherwise use enable:
-
-dnl PHP_ARG_ENABLE(sweph, whether to enable sweph support,
-dnl [  --enable-sweph           Enable sweph support])
-AC_MSG_RESULT(php_swephp: $PHP_SWEPHP)
+PHP_ARG_WITH([sweph],
+  [for Swiss Ephemeris (libswe) support],
+  [AS_HELP_STRING([--with-sweph],
+    [Include Swiss Ephemeris support])])
 
 if test "$PHP_SWEPH" != "no"; then
-  if ! test -r sweph/src/libswe.a; then
-    AC_MSG_RESULT(Building libswe.a)
-    (cd sweph/src;make libswe.a)
+
+  dnl Automatisches Bauen der statischen Bibliothek libswe.a, falls nötig
+  if ! test -r "$ext_srcdir/src/libswe.a"; then
+    AC_MSG_RESULT([Building libswe.a in $ext_srcdir/src])
+    (cd "$ext_srcdir/src" && make libswe.a)
   fi
 
-  if test -r sweph/src/libswe.a; then
-    SWEPH_DIR=sweph/src
-    AC_MSG_RESULT(libswe.a found in $SWEPH_DIR)
-  fi
- 
-  if test -z "$SWEPH_DIR"; then
-    AC_MSG_RESULT([not found])
-    AC_MSG_ERROR([Please reinstall the sweph distribution])
+  if test -r "$ext_srcdir/src/libswe.a"; then
+    SWEPH_DIR="$ext_srcdir/src"
+    AC_MSG_RESULT([libswe.a found in $SWEPH_DIR])
+  else
+    AC_MSG_ERROR([libswe.a not found! Please make sure Swiss Ephemeris sources are present in src/])
   fi
 
-  dnl # --with-sweph -> add include path
+  dnl Header-Pfad hinzufügen
   PHP_ADD_INCLUDE($SWEPH_DIR)
 
-  dnl # --with-sweph -> check for lib and symbol presence
-  dnl LIBNAME=swe
-  dnl LIBSYMBOL=swe_calc_u
+  dnl Statische Bibliothek & Mathe-Bibliothek sauber zu den Modul-Linkerflags hinzufügen
+  PHP_ADD_LIBRARY_WITH_PATH(swe, $SWEPH_DIR, SWEPHP_SHARED_LIBADD)
+  PHP_ADD_LIBRARY(m,, SWEPHP_SHARED_LIBADD)
 
+  PHP_SUBST(SWEPHP_SHARED_LIBADD)
 
-  dnl PHP_SUBST(SWEPH_SHARED_LIBADD)
-
-  # remove this... it causes runtime error when running php5
-  AC_SUBST(LDFLAGS, "-L$SWEPH_DIR -lswe -lm")
+  dnl Extension definieren
   PHP_NEW_EXTENSION(swephp, swephp.c, $ext_shared)
 fi

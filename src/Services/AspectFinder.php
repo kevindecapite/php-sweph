@@ -13,8 +13,12 @@ class AspectFinder
      */
     public static function getAspect(float $lon1, float $lon2): ?Aspect
     {
+        // Winkel auf 0..360 Grad normieren
+        $l1 = fmod(fmod($lon1, 360.0) + 360.0, 360.0);
+        $l2 = fmod(fmod($lon2, 360.0) + 360.0, 360.0);
+
         // Kürzeste Distanz auf dem 360°-Kreis berechnen
-        $diff = abs($lon1 - $lon2);
+        $diff = abs($l1 - $l2);
         $distance = $diff > 180.0 ? 360.0 - $diff : $diff;
 
         foreach (Aspect::cases() as $aspect) {
