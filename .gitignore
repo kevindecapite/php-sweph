@@ -29,3 +29,5 @@ Thumbs.db
 
 # --- Docker & Lokale Konfiguration ---
 .env
+/composer.lock
+/composer.phar
