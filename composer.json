@@ -42,17 +42,18 @@
         "sort-packages": true
     },
     "scripts": {
-    "test": "phpunit",
-    "test:unit": "phpunit --testsuite unit",
-    "test:integration": "phpunit --testsuite integration",
-    "phpstan": "phpstan analyse src tests",
-    "lint": "find src tests -name '*.php' -print0 | xargs -0 -n1 php -l",
-    "check": [
-        "@lint",
-        "@phpstan",
-        "@test"
-    ]
-},
+        "test": "phpunit",
+        "test:unit": "phpunit --testsuite unit",
+        "test:integration": "phpunit --testsuite integration",
+        "phpstan": "phpstan analyse src tests --level=8",
+        "lint": "find src tests examples -name '*.php' -print0 | xargs -0 -n1 php -l",
+        "check": [
+            "@lint",
+            "@phpstan",
+            "@test"
+        ]
+    }
+,
     "scripts-descriptions": {
         "test": "Führt die PHPUnit-Test-Suite aus.",
         "test:coverage": "Führt PHPUnit mit einer textbasierten Coverage-Ausgabe aus.",

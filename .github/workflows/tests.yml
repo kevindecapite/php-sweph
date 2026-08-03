@@ -2,65 +2,329 @@ name: Run Tests
 
 on:
   push:
-    branches: [ "main", "master", "develop" ]
+    branches:
+      - main
+      - master
+      - develop
+
   pull_request:
-    branches: [ "main", "master" ]
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
 
 jobs:
   test:
+    name: PHP 8.4 Tests
     runs-on: ubuntu-latest
 
+    env:
+      SWISSEPH_SOURCE_DIR: ${{ github.workspace }}/native/swisseph
+      SWEPHP_EXTENSION_DIR: ${{ github.workspace }}/ext
+      SWEPHP_DIST_DIR: ${{ github.workspace }}/dist/linux/php84
+
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Setup PHP
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: '8.4'
-        coverage: none
-        tools: composer:v2
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: composer:v2
+        env:
+          fail-fast: true
 
-    - name: Get Composer Cache Directory
-      id: composer-cache
-      run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+      - name: Show PHP Build Information
+        run: |
+          php -v
+          phpize --version
+          php-config --version
+          php-config --extension-dir
+          php --ini
 
-    - name: Cache Composer Dependencies
-      uses: actions/cache@v4
-      with:
-        path: ${{ steps.composer-cache.outputs.dir }}
-        key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-composer-
+      - name: Install Native Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install \
+            --yes \
+            --no-install-recommends \
+            build-essential \
+            autoconf \
+            pkg-config
 
-    - name: Install Build Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential php8.4-dev
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        shell: bash
+        run: |
+          echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
 
-    - name: Compile and Install swephp Extension
-      run: |
-        cd ext/
-        phpize
-        ./configure --enable-swephp
-        make
-        sudo make install
-        echo "extension=swephp.so" | sudo tee "$(php-config --ini-dir)/20-swephp.ini"
+      - name: Cache Composer Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: >-
+            ${{ runner.os }}-php84-composer-${{
+              hashFiles('composer.lock', 'composer.json')
+            }}
+          restore-keys: |
+            ${{ runner.os }}-php84-composer-
+            ${{ runner.os }}-composer-
 
-    - name: Verify PHP Extension Installation
-      run: php -m | grep swephp
+      # --------------------------------------------------------------
+      # Swiss Ephemeris: libswe.a
+      # --------------------------------------------------------------
 
-    - name: Install Composer Dependencies
-      run: composer install --no-ansi --no-interaction --no-scripts --progress=plain --prefer-dist
+      - name: Validate Swiss Ephemeris Sources
+        run: |
+          test -d "$SWISSEPH_SOURCE_DIR"
+          test -f "$SWISSEPH_SOURCE_DIR/swephexp.h"
+          test -f "$SWISSEPH_SOURCE_DIR/Makefile"
 
-    - name: Make Download Script Executable
-      run: chmod +x bin/download-ephe.sh
+          echo "Swiss Ephemeris source directory:"
+          echo "$SWISSEPH_SOURCE_DIR"
 
-    - name: Download Ephemeris Files
-      run: ./bin/download-ephe.sh
+      - name: Remove Old Swiss Ephemeris Build Artifacts
+        shell: bash
+        run: |
+          find "$SWISSEPH_SOURCE_DIR" \
+            -maxdepth 1 \
+            -type f \
+            \( \
+              -name '*.o' \
+              -o -name 'libswe.a' \
+              -o -name 'libswe.so' \
+              -o -name 'swetest' \
+            \) \
+            -delete
 
-    - name: Run Static Analysis (PHPStan)
-      run: ./vendor/bin/phpstan analyse src --level=8
+      - name: Build Swiss Ephemeris Static Library
+        run: |
+          make \
+            -C "$SWISSEPH_SOURCE_DIR" \
+            CFLAGS="-O2 -fPIC" \
+            libswe.a
 
-    - name: Run Test Suite
-      run: ./vendor/bin/phpunit
+          test -s "$SWISSEPH_SOURCE_DIR/libswe.a"
+          ls -lh "$SWISSEPH_SOURCE_DIR/libswe.a"
+
+      # --------------------------------------------------------------
+      # PHP extension: swephp.so
+      # --------------------------------------------------------------
+
+      - name: Prepare swephp Extension Build
+        working-directory: ext
+        run: |
+          phpize --clean || true
+
+          rm -rf \
+            autom4te.cache \
+            build \
+            modules \
+            .libs \
+            Makefile \
+            Makefile.fragments \
+            Makefile.objects \
+            config.h \
+            config.h.in \
+            config.log \
+            config.nice \
+            config.status \
+            configure \
+            libtool
+
+          phpize
+
+      - name: Configure swephp Extension
+        working-directory: ext
+        run: |
+          ./configure \
+            --enable-swephp=shared \
+            --with-swisseph-src="$SWISSEPH_SOURCE_DIR"
+
+          test -f Makefile
+
+          echo "PHP module targets:"
+          grep -n '^PHP_MODULES' Makefile || true
+
+          echo "swephp targets:"
+          grep -nE \
+            'swephp\.(la|lo|so)|swephp\.c' \
+            Makefile || true
+
+      - name: Compile swephp Extension
+        working-directory: ext
+        run: |
+          make -j"$(nproc)" V=1
+
+          echo "Generated extension artifacts:"
+
+          find "$SWEPHP_EXTENSION_DIR" \
+            -type f \
+            \( \
+              -name 'swephp.so' \
+              -o -name 'swephp.la' \
+              -o -name 'swephp.lo' \
+              -o -name 'swephp.o' \
+            \) \
+            -print
+
+      - name: Locate and Install swephp Extension
+        shell: bash
+        run: |
+          SWEPHP_SO="$(
+            find "$SWEPHP_EXTENSION_DIR" \
+              -type f \
+              -name 'swephp.so' \
+              -print \
+              -quit
+          )"
+
+          if [ -z "$SWEPHP_SO" ]; then
+            echo "::error::No swephp.so build artifact was found."
+            exit 1
+          fi
+
+          EXTENSION_DIR="$(php-config --extension-dir)"
+
+          echo "Source extension: $SWEPHP_SO"
+          echo "PHP extension directory: $EXTENSION_DIR"
+
+          sudo mkdir -p "$EXTENSION_DIR"
+
+          sudo install \
+            -m 755 \
+            "$SWEPHP_SO" \
+            "$EXTENSION_DIR/swephp.so"
+
+          test -f "$EXTENSION_DIR/swephp.so"
+          ls -lh "$EXTENSION_DIR/swephp.so"
+
+      - name: Enable swephp Extension
+        shell: bash
+        run: |
+          INI_SCAN_DIR="$(
+            php --ini |
+            awk -F': ' \
+              '/Scan for additional .ini files in/ {
+                print $2
+              }'
+          )"
+
+          if [ -z "$INI_SCAN_DIR" ] || [ "$INI_SCAN_DIR" = "(none)" ]; then
+            echo "::error::Could not determine the PHP INI scan directory."
+            php --ini
+            exit 1
+          fi
+
+          echo "PHP INI scan directory: $INI_SCAN_DIR"
+
+          sudo mkdir -p "$INI_SCAN_DIR"
+
+          echo "extension=swephp.so" |
+            sudo tee "$INI_SCAN_DIR/20-swephp.ini"
+
+      - name: Verify PHP Extension Installation
+        run: |
+          php --ri swephp
+          php -m | grep --fixed-strings swephp
+          php -r "echo swe_version(), PHP_EOL;"
+
+          php -r '
+              if (!extension_loaded("swephp")) {
+                  fwrite(STDERR, "swephp is not loaded.\n");
+                  exit(1);
+              }
+
+              if (!function_exists("swe_version")) {
+                  fwrite(STDERR, "swe_version() is unavailable.\n");
+                  exit(1);
+              }
+          '
+
+      # --------------------------------------------------------------
+      # Release artifact
+      # --------------------------------------------------------------
+
+      - name: Prepare Linux Extension Artifact
+        shell: bash
+        run: |
+          EXTENSION_DIR="$(php-config --extension-dir)"
+
+          mkdir -p "$SWEPHP_DIST_DIR"
+
+          cp \
+            "$EXTENSION_DIR/swephp.so" \
+            "$SWEPHP_DIST_DIR/swephp.so"
+
+          (
+            cd "$SWEPHP_DIST_DIR"
+            sha256sum swephp.so > swephp.so.sha256
+          )
+
+          ls -lh "$SWEPHP_DIST_DIR"
+          cat "$SWEPHP_DIST_DIR/swephp.so.sha256"
+
+      - name: Upload swephp Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: swephp-php84-linux-x86_64-nts
+          path: |
+            dist/linux/php84/swephp.so
+            dist/linux/php84/swephp.so.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      # --------------------------------------------------------------
+      # PHP SDK
+      # --------------------------------------------------------------
+
+      - name: Validate Composer Configuration
+        run: composer validate --strict
+
+      - name: Install Composer Dependencies
+        run: |
+          composer install \
+            --no-ansi \
+            --no-interaction \
+            --no-progress \
+            --prefer-dist \
+            --optimize-autoloader
+
+      - name: Verify Composer Platform Requirements
+        run: composer check-platform-reqs
+
+      - name: Make Download Script Executable
+        run: chmod +x bin/download-ephe.sh
+
+      - name: Download Ephemeris Files
+        run: ./bin/download-ephe.sh
+
+      - name: Show Downloaded Ephemeris Files
+        run: |
+          find ephe \
+            -maxdepth 1 \
+            -type f \
+            -name '*.se1' \
+            -ls
+
+      - name: Run PHP Syntax Check
+        shell: bash
+        run: |
+          find src tests examples \
+            -type f \
+            -name '*.php' \
+            -print0 |
+          xargs -0 -n1 php -l
+
+      - name: Run Static Analysis
+        run: composer phpstan
+
+      - name: Run Unit Tests
+        run: composer test:unit
+
+      - name: Run Integration Tests
+        run: composer test:integration
