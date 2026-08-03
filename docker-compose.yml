@@ -3,9 +3,21 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    volumes:
-      - .:/app
+
     working_dir: /app
-    tty: true                  # Hält die Standard-Eingabe offen
-    stdin_open: true           # Erlaubt interaktive Shells
-    command: tail -f /dev/null # Hält den Container unendlich im Hintergrund aktiv
+
+    volumes:
+      # Projektdateien vom Host
+      - .:/app
+
+      # Composer-Abhängigkeiten bleiben im Container-Volume erhalten
+      - vendor:/app/vendor
+
+    tty: true
+    stdin_open: true
+
+    # Hält den Entwicklungscontainer aktiv
+    command: tail -f /dev/null
+
+volumes:
+  vendor:

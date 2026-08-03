@@ -1,20 +1,20 @@
 <?php
 
-
 declare(strict_types=1);
 
 namespace Sweph\DTO;
 
-use DateTimeImmutable;
+use Sweph\Enums\HeliacalEventType;
 
-readonly class HeliacalEvent
+final readonly class HeliacalEvent
 {
+    /**
+     * @param list<float> $values
+     */
     public function __construct(
-        public DateTimeImmutable  $startVisibility,
-        public ?DateTimeImmutable $optimumVisibility,
-        public ?DateTimeImmutable $endVisibility,
-        public array              $phenomenonData = []
-    )
-    {
+        public string $objectName,
+        public HeliacalEventType $type,
+        public array $values,
+    ) {
     }
 }

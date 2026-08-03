@@ -1,17 +1,86 @@
-// config.w32 for extension swephp
+// config.w32 for the swephp extension
 
-ARG_WITH("sweph", "Swiss Ephemeris support", "no");
+ARG_WITH(
+    "swephp",
+    "Swiss Ephemeris support",
+    "no"
+);
 
-if (PHP_SWEPH != "no") {
-    // 1. Header-Pfad hinzufügen (zeigt auf den C-Quellcode der Swiss Ephemeris)
-    ADD_FLAG("CFLAGS_SWEPH", "/I" + configure_module_dirname + "/src");
+ARG_WITH(
+    "swisseph-src",
+    "Path to the Swiss Ephemeris C sources",
+    "no"
+);
 
-    // 2. C-Quelldatei der Extension hinzufügen
-    EXTENSION("swephp", "swephp.c", PHP_SWEPH_SHARED, "/I" + configure_module_dirname);
+if (PHP_SWEPHP != "no") {
+    var swissephDir;
 
-    // 3. Optional: Falls du libswe als vorkompilierte .lib einbindest:
-    // CHECK_LIB("libswe.lib", "swephp", PHP_SWEPH);
+    /*
+     * Wenn kein eigener Pfad angegeben wurde, erwarten wir die
+     * Swiss-Ephemeris-Quellen relativ zum Extension-Verzeichnis.
+     *
+     * Erwartete Repository-Struktur:
+     *
+     * ext/
+     *   config.w32
+     *   swephp.c
+     *   php_swephp.h
+     *
+     * native/
+     *   swisseph/
+     *     swephexp.h
+     *     sweph.c
+     *     ...
+     */
+    if (PHP_SWISSEPH_SRC == "no") {
+        swissephDir =
+            configure_module_dirname +
+            "\\..\\native\\swisseph";
+    } else {
+        swissephDir = PHP_SWISSEPH_SRC;
+    }
 
-    // Modul-Makro definieren
-    AC_DEFINE("HAVE_SWEPH", 1, "Swiss Ephemeris support");
+    CHECK_HEADER_ADD_INCLUDE(
+        "swephexp.h",
+        "CFLAGS_SWEPHP",
+        swissephDir
+    );
+
+    /*
+     * PHP-Extension registrieren.
+     */
+    EXTENSION(
+        "swephp",
+        "swephp.c",
+        PHP_SWEPHP_SHARED,
+        "/I \"" + swissephDir + "\""
+    );
+
+    /*
+     * Variante A:
+     * Swiss-Ephemeris-C-Quelldateien direkt mit der Extension kompilieren.
+     *
+     * Das ist unter Windows meist einfacher als zuerst eine statische
+     * libswe.lib zu bauen.
+     */
+    ADD_SOURCES(
+        swissephDir,
+        [
+            "swecl.c",
+            "swedate.c",
+            "swehouse.c",
+            "swejpl.c",
+            "swemmoon.c",
+            "swemplan.c",
+            "sweph.c",
+            "swephlib.c"
+        ].join(" "),
+        "swephp"
+    );
+
+    AC_DEFINE(
+        "HAVE_SWEPHP",
+        1,
+        "Swiss Ephemeris PHP extension support"
+    );
 }

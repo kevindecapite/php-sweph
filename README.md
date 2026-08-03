@@ -1,244 +1,391 @@
-# PHP Swiss Ephemeris SDK (Modern OOP)
+# PHP Swiss Ephemeris
 
-[![Run Tests](https://github.com/drt04-dev/PHP-Swiss-Ephemeris/actions/workflows/tests.yml/badge.svg)](https://github.com/drt04-dev/PHP-Swiss-Ephemeris/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![PHP Version](https://img.shields.io/badge/PHP-%3E%3D%208.4-8892BF.svg)](https://php.net)
+[![Tests](https://github.com/drt04-dev/PHP-Swiss-Ephemeris/actions/workflows/tests.yml/badge.svg)](https://github.com/drt04-dev/PHP-Swiss-Ephemeris/actions)
+[![PHP](https://img.shields.io/badge/PHP-8.4+-8892BF.svg)](https://php.net)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Ein moderner, objektorientierter PHP 8.4+ Wrapper für die Hochpräzisions-Berechnungen der **Swiss Ephemeris** (astronomische und astrologische Berechnungen). 
+A modern, strongly typed **PHP 8.4 SDK** for the **Swiss Ephemeris**.
 
-Dieses Paket wirft alten Ballast über Bord und nutzt konsequent Features wie **Backed Enums**, **Asymmetric Visibility** (`public private(set)`), **Property Hooks** und strikte Typisierung.
-
----
-
-## 📋 Voraussetzungen
-
-* **PHP 8.4** oder neuer
-* Die C-Erweiterung **`swephp`** (im PHP-Core geladen als `ext-swephp`)
-* Das Hilfsprogramm `curl` (zum Herunterladen der Ephemeriden-Dateien)
+The project combines the performance of the native Swiss Ephemeris C library with a modern, object-oriented PHP API based on immutable DTOs, enums, value objects and services.
 
 ---
 
-## 📦 Installation
+# Features
 
-Installiere das Paket direkt über Composer:
+- ✅ PHP 8.4+
+- ✅ Strict Types
+- ✅ Immutable DTOs
+- ✅ Native PHP Enums
+- ✅ Value Objects
+- ✅ Dependency Injection ready
+- ✅ Modern Service Layer
+- ✅ Type-safe API
+- ✅ Swiss Ephemeris compatible
+- ✅ PHPUnit & PHPStan ready
+
+---
+
+# Requirements
+
+- PHP 8.4+
+- ext-swephp
+- Composer
+- Swiss Ephemeris data files (.se1) (optional when using Moshier)
+
+---
+
+# Installation
 
 ```bash
 composer require drt04-dev/php-swiss-ephemeris
 ```
 
-# 🚀 Quick Start (Verwendung)
+---
+
+# Quick Start
+
 ```php
 <?php
 
 declare(strict_types=1);
 
-use Sweph\Ephemeris;
+use Sweph\SwephFactory;
+use Sweph\SwephConfig;
 use Sweph\Enums\Planet;
-use Sweph\Enums\HouseSystem;
 use Sweph\Enums\CalculationFlag;
 
-// 1. Planetenposition berechnen (liefert ein unveränderliches DTO)
-$date = new DateTimeImmutable('2026-07-15 12:00:00', new DateTimeZone('UTC'));
-$position = Ephemeris::getPlanetPosition(Planet::Sun, $date, [CalculationFlag::Speed]);
+$config = new SwephConfig(
+    ephemerisPath: __DIR__.'/ephe',
+);
 
-echo "Sonnenposition: {$position->longitude}°\n";
-echo "Tägliche Geschwindigkeit: {$position->longitudeSpeed}°/Tag\n";
+$sweph = SwephFactory::create($config);
 
-if ($position->isRetrograde()) {
-    echo "Die Sonne ist rückläufig.\n";
-}
+$position = $sweph
+    ->planets()
+    ->calculateUt(
+        julianDayUt: 2461256.0,
+        planet: Planet::Sun,
+        flags: CalculationFlag::combine(
+            CalculationFlag::SwissEphemeris,
+            CalculationFlag::Speed,
+        ),
+    );
 
-// 2. Häuser und Achsen berechnen (z.B. für Berlin)
-$julianDay = Ephemeris::getJulianDay(2026, 7, 15, 12.0);
-$houses = Ephemeris::calculateHouses($julianDay, 52.5200, 13.4050, HouseSystem::PLACIDUS);
-
-echo "Aszendent: {$houses->ascendant}°\n";
-echo "Medium Coeli (MC): {$houses->mc}°\n";
-echo "Spitze Haus 1: {$houses->getCusp(1)}°\n";
+echo $position->longitude;
 ```
 
-# 🐳 C-Erweiterung & Lokale Entwicklung im Docker
-Um die C-Erweiterung nicht manuell auf deinem lokalen System kompilieren zu müssen, steht eine fertige Docker-Umgebung zur Verfügung. Sie bringt PHP 8.4, die fertig einkompilierte Extension swephp und alle Werkzeuge mit.
+---
 
-1. Docker-Container starten
-Öffne dein Terminal im Hauptverzeichnis des Projekts und führe aus:
+# Architecture
+
+```
+Swiss Ephemeris C Library
+            │
+            ▼
+     PHP Extension (ext-swephp)
+            │
+            ▼
+      Native Adapter Layer
+            │
+            ▼
+           Mapper
+            │
+            ▼
+       Immutable DTOs
+            │
+            ▼
+      Service Layer API
+```
+
+---
+
+# Project Structure
+
+```
+src/
+
+├── Contracts/
+├── DTO/
+├── Enums/
+├── Exception/
+├── Mapper/
+├── Native/
+├── Service/
+├── Traits/
+├── ValueObject/
+│
+├── Sweph.php
+├── SwephConfig.php
+└── SwephFactory.php
+```
+
+---
+
+# DTOs
+
+The SDK returns immutable DTOs instead of arrays.
+
+Included DTOs:
+
+- AspectResult
+- CelestialPosition
+- EclipseEvent
+- FixstarPosition
+- HeliacalEvent
+- HouseCalculation
+- JulianDayResult
+- OrbitalElements
+- SplitDegreeResult
+- UtcDateTime
+
+Example:
+
+```php
+$position->longitude;
+$position->latitude;
+$position->distance;
+$position->longitudeSpeed;
+```
+
+---
+
+# Enums
+
+Every important Swiss Ephemeris constant is represented by a PHP Enum.
+
+Examples:
+
+- Planet
+- Calendar
+- HouseSystem
+- CalculationFlag
+- SiderealMode
+- SiderealFlag
+- NodeFlag
+- EclipseFlag
+- RiseTransitFlag
+- SplitDegreeFlag
+- RefractionMode
+- HeliacalEventType
+- HeliacalFlag
+
+Example:
+
+```php
+CalculationFlag::combine(
+    CalculationFlag::SwissEphemeris,
+    CalculationFlag::Speed,
+    CalculationFlag::Equatorial,
+);
+```
+
+---
+
+# Value Objects
+
+Instead of primitive values, the SDK uses dedicated value objects.
+
+Available:
+
+- GeographicPosition
+- JulianDate
+- Orb
+- FixstarQuery
+
+Example:
+
+```php
+$location = new GeographicPosition(
+    longitude: 13.405,
+    latitude: 52.520,
+    altitudeMeters: 34.0,
+);
+```
+
+---
+
+# Services
+
+The SDK exposes dedicated domain services.
+
+```php
+$sweph->planets();
+
+$sweph->houses();
+
+$sweph->fixedStars();
+
+$sweph->time();
+
+$sweph->aspects();
+```
+
+---
+
+# Example: Houses
+
+```php
+use Sweph\Enums\HouseSystem;
+use Sweph\ValueObject\GeographicPosition;
+
+$houses = $sweph
+    ->houses()
+    ->calculate(
+        julianDayUt: 2461256.0,
+        position: new GeographicPosition(
+            longitude: 13.405,
+            latitude: 52.520,
+        ),
+        system: HouseSystem::Placidus,
+    );
+```
+
+---
+
+# Example: Aspects
+
+```php
+use Sweph\Enums\Aspect;
+
+$result = $sweph
+    ->aspects()
+    ->calculate(
+        10.0,
+        129.5,
+        Aspect::Trine,
+    );
+
+if ($result !== null) {
+    echo $result->deviation;
+}
+```
+
+---
+
+# Error Handling
+
+Dedicated exception hierarchy.
+
+```
+SwephException
+├── NativeExtensionException
+├── CalculationException
+├── InvalidCoordinateException
+├── InvalidJulianDayException
+├── InvalidResponseException
+├── FixstarNotFoundException
+└── TopocentricConfigurationException
+```
+
+---
+
+# Docker Development
+
+Start the development environment.
 
 ```bash
 docker compose up -d --build
 ```
 
-2. Composer-Abhängigkeiten installieren
-Da das Repository-Verzeichnis als Volume gespiegelt wird, installierst du PHPUnit und PHPStan direkt im Container:
+Install dependencies.
 
 ```bash
 docker compose exec app composer install
 ```
 
-3. Ephemeriden-Dateien (.se1) herunterladen
-Für hochpräzise Berechnungen müssen die Ephemeriden-Dateien im Ordner ephe/ liegen:
+Run tests.
 
 ```bash
-# Skript einmalig ausführbar machen
-chmod +x bin/download-ephe.sh
-# Download im Container anstoßen
-docker compose exec app ./bin/download-ephe.sh
+docker compose exec app composer test
 ```
 
-4. Tests & Static Analysis ausführen
+Run static analysis.
 
 ```bash
-# Automated Test Suite (PHPUnit 11)
-docker compose exec app ./vendor/bin/phpunit
-# Statische Code-Analyse (PHPStan)
-docker compose exec app ./vendor/bin/phpstan analyse src
+docker compose exec app composer phpstan
 ```
 
-5. Beispiele im Terminal testen
-Im Ordner examples/ findest du sofort ausführbare Demonstrationsskripte:
+---
+
+# Examples
+
+```
+examples/
+
+01-planets.php
+02-houses.php
+03-fixed-stars.php
+04-aspects.php
+05-eclipses.php
+```
+
+---
+
+# Testing
+
+Run PHPUnit.
 
 ```bash
-docker compose exec app php examples/01-planet-positions.php
-docker compose exec app php examples/02-birth-chart.php
-docker compose exec app php examples/03-retrogrades.php
+vendor/bin/phpunit
 ```
 
-# 📂 Repository-Struktur
-Das Repository ist in die native C-Erweiterung (ext/) und den modernen PHP 8.4 OOP-Wrapper (src/) unterteilt:
+Run PHPStan.
 
-```text
-drt04-dev/php-swiss-ephemeris/
-├── .github/
-│   └── workflows/
-│       └── tests.yml          # GitHub Action für automatisierte CI/CD-Tests
-├── bin/
-│   └── download-ephe.sh       # Hilfsskript zum automatischen Laden der .se1-Ephemeridendateien
-├── docker/
-│   └── Dockerfile             # Alpine PHP 8.4 Image inkl. swephp Extension
-├── ext/                       # C-Quellcode der swephp-Erweiterung
-│   ├── config.m4
-│   ├── php_swephp.h
-│   └── swephp.c
-├── src/                       # Der moderne PHP 8.4+ OOP-Wrapper (Namespace: Sweph)
-│   ├── DTO/                   # Unveränderliche Datenobjekte (public private(set))
-│   │   ├── CelestialPosition.php
-│   │   └── HouseCalculation.php
-│   ├── Enums/                 # Typensichere Backed Enums
-│   │   ├── Aspect.php
-│   │   ├── Calendar.php
-│   │   ├── CalculationFlag.php
-│   │   ├── HouseSystem.php
-│   │   ├── Planet.php
-│   │   └── SiderealMode.php
-│   ├── Service/               # Domänen-Services & Hilfsklassen
-│   │   └── AspectCalculator.php
-│   ├── Ephemeris.php          # Haupt-Service (Statische Kapselung der C-Extension)
-│   └── EphemerisException.php # Exception für Ephemeriden- und Berechnungsfehler
-├── tests/                     # Qualitätssicherung mit PHPUnit 11
-│   └── EphemerisTest.php
-├── examples/                  # Direkt lauffähige Praxisbeispiele
-│   ├── 01-planet-positions.php
-│   ├── 02-birth-chart.php
-│   └── 03-retrogrades.php
-├── composer.json              # Autoloading & Paketdefinition
-├── docker-compose.yml         # Lokale Entwicklungsumgebung
-├── LICENSE                    # MIT Lizenz
-└── README.md                  # Dokumentation
+```bash
+vendor/bin/phpstan analyse
 ```
 
-# 🛠️ Integration in Symfony (8.1+)
-Da Ephemeris als statischer Service konzipiert ist, lässt er sich nahtlos in moderne Symfony-Anwendungen einbinden.
+---
 
-1. Ephemeriden-Pfad beim Anwendungsstart setzen
-Setze den Pfad zu deinen Ephemeriden-Dateien am besten im Bootstrap-Prozess (z. B. in der src/Kernel.php oder einem Listener):
+# Supported Swiss Ephemeris Functions
 
-```php
-// src/Kernel.php
-public function boot(): void
-{
-    parent::boot();
-    
-    // Pfad zum Ephemeriden-Verzeichnis setzen (z. B. %kernel.project_dir%/var/ephe)
-    \Sweph\Ephemeris::setEphePath($this->getProjectDir() . '/var/ephe');
-}
-```
+The SDK currently wraps functions such as:
 
-2. Nutzung im Controller
-```php
-<?php
+- swe_calc()
+- swe_calc_ut()
+- swe_fixstar()
+- swe_fixstar_ut()
+- swe_houses()
+- swe_houses_ex()
+- swe_julday()
+- swe_revjul()
+- swe_set_topo()
+- swe_set_ephe_path()
 
-declare(strict_types=1);
+and many more.
 
-namespace App\Controller;
+---
 
-use DateTimeImmutable;
-use Sweph\Enums\Planet;
-use Sweph\Ephemeris;
-use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\Routing\Attribute\Route;
+# Why this SDK?
 
-class AstrologyController extends AbstractController
-{
-    #[Route('/api/planet/{name}', name: 'app_planet_position', methods: ['GET'])]
-    public function getPosition(string $name): JsonResponse
-    {
-        $planet = match (strtolower($name)) {
-            'sun' => Planet::Sun,
-            'moon' => Planet::Moon,
-            'mars' => Planet::Mars,
-            default => null,
-        };
+Instead of returning loosely typed arrays like the native C API, this SDK provides:
 
-        if ($planet === null) {
-            return $this->json(['error' => 'Planet nicht unterstützt'], 400);
-        }
+- Immutable DTOs
+- PHP Enums
+- Dependency Injection
+- Service Layer
+- Value Objects
+- Better IDE autocompletion
+- Static analysis support
+- Cleaner, more maintainable code
 
-        $position = Ephemeris::getPlanetPosition($planet, new DateTimeImmutable('now'));
+---
 
-        return $this->json([
-            'planet' => $planet->name,
-            'longitude' => $position->longitude,
-            'latitude' => $position->latitude,
-            'is_retrograde' => $position->isRetrograde(),
-        ]);
-    }
-}
-```
+# Contributing
 
-3. CLI Command erstellen (Symfony Console)
+Pull requests are welcome.
 
-```php
-<?php
+Please ensure that:
 
-declare(strict_types=1);
+- PHPUnit passes
+- PHPStan passes
+- Coding style is respected
+- New features include tests
 
-namespace App\Command;
+---
 
-use DateTimeImmutable;
-use Sweph\Enums\Planet;
-use Sweph\Ephemeris;
-use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Style\SymfonyStyle;
+# License
 
-#[AsCommand(
-    name: 'app:calculate-sun',
-    description: 'Berechnet die aktuelle Position der Sonne.',
-)]
-class CalculateSunCommand extends Command
-{
-    protected function execute(InputInterface $input, OutputInterface$output): int
-    {
-        $io = new SymfonyStyle($input, $output);$position = Ephemeris::getPlanetPosition(Planet::Sun, new DateTimeImmutable('now'));
-        
-        $io->success(sprintf('Die Sonne steht aktuell auf \%.2f° im Tierkreis.',$position->longitude));
-        
-        return Command::SUCCESS;
-    }
-}
-```
+This project is licensed under the terms described in the `LICENSE` file.
 
-# 📄 Lizenz
-Dieses Projekt ist unter der MIT-Lizenz lizenziert. Siehe LICENSE für Details.
+Please note that the **Swiss Ephemeris** itself is distributed under its own licensing terms. Ensure that your use of the underlying library complies with those terms.

@@ -2,76 +2,161 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../vendor/autoload.php';
-
-use Sweph\Ephemeris;
-use Sweph\Enums\Planet;
+use Sweph\Enums\CalculationFlag;
+use Sweph\Enums\Calendar;
 use Sweph\Enums\HouseSystem;
-use Sweph\Service\AspectCalculator;
-use Sweph\EphemerisException;
+use Sweph\Enums\Planet;
+use Sweph\SwephConfig;
+use Sweph\SwephFactory;
+use Sweph\ValueObject\GeographicPosition;
 
-// Beispiel: Geburtsdatum 15. Mai 1990, 14:30 Uhr in Berlin (UTC+2 in Sommerszeit -> 12:30 UTC)
-$birthDate = new DateTimeImmutable('1990-05-15 12:30:00', new DateTimeZone('UTC'));
-$berlinLat = 52.5200;
-$berlinLon = 13.4050;
+require dirname(__DIR__) . '/vendor/autoload.php';
 
-echo "=== Geburtshoroskop (Berlin, {$birthDate->format('Y-m-d H:i:s')} UTC) ===\n\n";
+$date = new DateTimeImmutable(
+    '1990-07-15 12:00:00',
+    new DateTimeZone('UTC'),
+);
+
+$location = new GeographicPosition(
+    longitude: 13.4050,
+    latitude: 52.5200,
+    altitudeMeters: 34.0,
+);
+
+$sweph = SwephFactory::create(
+    new SwephConfig(
+        ephemerisPath: dirname(__DIR__) . '/ephe',
+        observer: $location,
+    ),
+);
 
 try {
-    // 1. Julianischen Tag berechnen
-    $julianDay = Ephemeris::getJulianDay(
-        (int)$birthDate->format('Y'),
-        (int)$birthDate->format('m'),
-        (int)$birthDate->format('d'),
-        12.5 // 12:30 UTC
+    $decimalHour = (int) $date->format('G')
+        + ((int) $date->format('i') / 60)
+        + ((int) $date->format('s') / 3600);
+
+    $julianDay = $sweph->time()->julianDay(
+        year: (int) $date->format('Y'),
+        month: (int) $date->format('n'),
+        day: (int) $date->format('j'),
+        decimalHour: $decimalHour,
+        calendar: Calendar::Gregorian,
     );
 
-    // 2. Häuser berechnen
-    $houses = Ephemeris::calculateHouses($julianDay, $berlinLat, $berlinLon, HouseSystem::PLACIDUS);
+    $planetFlags = CalculationFlag::combine(
+        CalculationFlag::SwissEphemeris,
+        CalculationFlag::Speed,
+        CalculationFlag::Topocentric,
+    );
 
-    echo "--- ACHSEN & HÄUSER ---\n";
-    printf("Aszendent (AC): %6.2f°\n", $houses->ascendant);
-    printf("Medium Coeli (MC): %6.2f°\n\n", $houses->mc);
+    $bodies = [
+        Planet::Sun,
+        Planet::Moon,
+        Planet::Mercury,
+        Planet::Venus,
+        Planet::Mars,
+        Planet::Jupiter,
+        Planet::Saturn,
+        Planet::Uranus,
+        Planet::Neptune,
+        Planet::Pluto,
+        Planet::TrueNode,
+    ];
 
-    echo "Häuserspitzen:\n";
-    foreach ($houses->cusps as $houseNumber => $cuspDegree) {
-        printf("Haus %2d: %6.2f°\n", $houseNumber, $cuspDegree);
+    echo "Geburtshoroskop\n";
+    echo "================\n";
+
+    printf(
+        "Zeit: %s UTC\n",
+        $date->format('Y-m-d H:i:s'),
+    );
+
+    printf(
+        "Ort: %.4f° N, %.4f° E; Höhe %.0f m\n",
+        $location->latitude,
+        $location->longitude,
+        $location->altitudeMeters,
+    );
+
+    printf(
+        "Julianischer Tag: %.8f\n\n",
+        $julianDay->value,
+    );
+
+    echo "Planeten und Punkte\n";
+    echo "-------------------\n";
+
+    foreach ($bodies as $body) {
+        $position = $sweph->planets()->calculateUt(
+            julianDayUt: $julianDay->value,
+            planet: $body,
+            flags: $planetFlags,
+        );
+
+        printf(
+            "%-12s Länge: %10.6f°  Breite: %9.6f°  Geschwindigkeit: %+10.6f°/Tag\n",
+            $body->name,
+            $position->longitude,
+            $position->latitude,
+            $position->longitudeSpeed,
+        );
     }
 
-    // 3. Planetenpositionen berechnen
-    echo "\n--- PLANETEN ---\n";
-    $planets = [Planet::Sun, Planet::Moon, Planet::Mercury, Planet::Venus, Planet::Mars, Planet::Jupiter];
-    $positions = [];
+    $houses = $sweph->houses()->calculate(
+        julianDayUt: $julianDay->value,
+        position: $location,
+        system: HouseSystem::Placidus,
+    );
 
-    foreach ($planets as $planet) {
-        $positions[$planet->value] = Ephemeris::calculatePlanetPosition($julianDay, $planet);
-        printf("%-10s: %6.2f°\n", $planet->name, $positions[$planet->value]->longitude);
-    }
+    echo "\nHäuser nach Placidus\n";
+    echo "--------------------\n";
 
-    // 4. Aspekte berechnen
-    echo "\n--- ASPEKTE ---\n";
-    for ($i = 0; $i < count($planets); $i++) {
-        for ($j = $i + 1; $j < count($planets); $j++) {
-            $p1 = $planets[$i];
-            $p2 = $planets[$j];
-
-            $aspect = AspectCalculator::calculate($positions[$p1->value], $positions[$p2->value]);
-
-            if ($aspect !== null) {
-                printf(
-                    "%-8s %-12s %-8s (Abweichung: %4.2f°, %s)\n",
-                    $p1->name,
-                    $aspect->aspect->name,
-                    $p2->name,
-                    $aspect->orb,
-                    $aspect->isApplying ? 'zulaufend' : 'ablaufend'
-                );
-            }
+    /*
+     * Bei normalen Häusersystemen befindet sich an Index 0 üblicherweise
+     * ein unbenutzter Eintrag. Die Hausspitzen liegen an Index 1 bis 12.
+     */
+    for ($house = 1; $house <= 12; $house++) {
+        if (!isset($houses->cusps[$house])) {
+            continue;
         }
+
+        printf(
+            "Haus %2d: %10.6f°\n",
+            $house,
+            $houses->cusps[$house],
+        );
     }
 
-} catch (EphemerisException $e) {
-    echo "Fehler: " . $e->getMessage() . "\n";
+    echo "\nAchsen\n";
+    echo "------\n";
+
+    if (isset($houses->angles[0])) {
+        printf(
+            "Aszendent:     %10.6f°\n",
+            $houses->angles[0],
+        );
+    }
+
+    if (isset($houses->angles[1])) {
+        printf(
+            "Medium Coeli:  %10.6f°\n",
+            $houses->angles[1],
+        );
+    }
+
+    if (isset($houses->angles[2])) {
+        printf(
+            "ARMC:          %10.6f°\n",
+            $houses->angles[2],
+        );
+    }
+
+    if (isset($houses->angles[3])) {
+        printf(
+            "Vertex:        %10.6f°\n",
+            $houses->angles[3],
+        );
+    }
 } finally {
-    Ephemeris::close();
+    $sweph->close();
 }

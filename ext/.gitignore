@@ -1,0 +1,10 @@
+/config.h.in
+/config.log
+/config.nice
+/configure
+/configure.ac
+/Makefile.fragments
+/Makefile.objects
+/run-tests.php
+/build/
+/autom4te.cache/

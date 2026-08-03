@@ -1,23 +1,19 @@
 <?php
 
-
 declare(strict_types=1);
 
 namespace Sweph\DTO;
 
-use DateTimeImmutable;
-
-readonly class EclipseEvent
+final readonly class EclipseEvent
 {
+    /**
+     * @param list<float> $times
+     * @param list<float> $attributes
+     */
     public function __construct(
-        public int                $returnCode,
-        public DateTimeImmutable  $maximumTime,
-        public ?DateTimeImmutable $firstContact,
-        public ?DateTimeImmutable $secondContact,
-        public ?DateTimeImmutable $thirdContact,
-        public ?DateTimeImmutable $fourthContact,
-        public array              $attributes = []
-    )
-    {
+        public int $typeFlags,
+        public array $times,
+        public array $attributes = [],
+    ) {
     }
 }

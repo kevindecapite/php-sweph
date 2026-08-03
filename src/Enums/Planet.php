@@ -4,71 +4,52 @@ declare(strict_types=1);
 
 namespace Sweph\Enums;
 
-/**
- * Repräsentiert die Himmelskörper und sensitiven Punkte der Swiss Ephemeris.
- */
 enum Planet: int
 {
-    // Hauptplaneten & Lichter
-    case Sun = 0;             // SE_SUN
-    case Moon = 1;            // SE_MOON
-    case Mercury = 2;         // SE_MERCURY
-    case Venus = 3;           // SE_VENUS
-    case Mars = 4;            // SE_MARS
-    case Jupiter = 5;         // SE_JUPITER
-    case Saturn = 6;          // SE_SATURN
-    case Uranus = 7;          // SE_URANUS
-    case Neptune = 8;         // SE_NEPTUNE
-    case Pluto = 9;           // SE_PLUTO
+    case EclipticAndNutation = -1;
+    case FixedStar = -10;
 
-    // Mondknoten & Apogäum / Lilith
-    case MeanNode = 10;       // Mittlerer Mondknoten (SE_MEAN_NODE)
-    case TrueNode = 11;       // Wahrer Mondknoten (SE_TRUE_NODE)
-    case MeanApog = 12;       // Lilith / Mittleres Apogäum (SE_MEAN_APOG)
-    case OscuApog = 13;       // Oszillierende Lilith (SE_OSCU_APOG)
+    case Sun = 0;
+    case Moon = 1;
+    case Mercury = 2;
+    case Venus = 3;
+    case Mars = 4;
+    case Jupiter = 5;
+    case Saturn = 6;
+    case Uranus = 7;
+    case Neptune = 8;
+    case Pluto = 9;
+    case MeanNode = 10;
+    case TrueNode = 11;
+    case MeanApogee = 12;
+    case OsculatingApogee = 13;
+    case Earth = 14;
+    case Chiron = 15;
+    case Pholus = 16;
+    case Ceres = 17;
+    case Pallas = 18;
+    case Juno = 19;
+    case Vesta = 20;
+    case InterpolatedApogee = 21;
+    case InterpolatedPerigee = 22;
 
-    // Himmelskörper & Asteroiden
-    case Earth = 14;          // Erde (SE_EARTH)
-    case Chiron = 15;         // Chiron (SE_CHIRON)
-    case Pholus = 16;         // Pholus (SE_PHOLUS)
-    case Ceres = 17;          // Ceres (SE_CERES)
-    case Pallas = 18;         // Pallas (SE_PALLAS)
-    case Juno = 19;           // Juno (SE_JUNO)
-    case Vesta = 20;          // Vesta (SE_VESTA)
-
-    // Interpolierte Apsiden-Punkte (Natürliche Lilith & Priapus)
-    case IntpApog = 21;       // Interpoliertes Apogäum / Natürliche Lilith (SE_INTP_APOG)
-    case IntpPerg = 22;       // Interpoliertes Perigäum / Priapus (SE_INTP_PERG)
-
-    /**
-     * Prüft, ob der Körper ein Hauptplanet oder Licht (Sonne/Mond) ist.
-     */
-    public function isMainPlanet(): bool
-    {
-        return $this->value >= self::Sun->value && $this->value <= self::Pluto->value;
-    }
-
-    /**
-     * Prüft, ob es sich um einen mathematisch berechneten Punkt/Apside handelt.
-     */
-    public function isCalculatedPoint(): bool
-    {
-        return match ($this) {
-            self::MeanNode, self::TrueNode, self::MeanApog,
-            self::OscuApog, self::IntpApog, self::IntpPerg => true,
-            default => false,
-        };
-    }
-
-    /**
-     * Prüft, ob es sich um einen Kleinplaneten / Asteroiden handelt.
-     */
-    public function isAsteroid(): bool
-    {
-        return match ($this) {
-            self::Chiron, self::Pholus, self::Ceres,
-            self::Pallas, self::Juno, self::Vesta => true,
-            default => false,
-        };
-    }
+    case Cupido = 40;
+    case Hades = 41;
+    case Zeus = 42;
+    case Kronos = 43;
+    case Apollon = 44;
+    case Admetos = 45;
+    case Vulkanus = 46;
+    case Poseidon = 47;
+    case Isis = 48;
+    case Nibiru = 49;
+    case Harrington = 50;
+    case NeptuneLeverrier = 51;
+    case NeptuneAdams = 52;
+    case PlutoLowell = 53;
+    case PlutoPickering = 54;
+    case Vulcan = 55;
+    case WhiteMoon = 56;
+    case Proserpina = 57;
+    case Waldemath = 58;
 }

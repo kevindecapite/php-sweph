@@ -2,17 +2,43 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../vendor/autoload.php';
-
-use Sweph\Ephemeris;
+use Sweph\Enums\CalculationFlag;
+use Sweph\Enums\Calendar;
 use Sweph\Enums\Planet;
-use Sweph\EphemerisException;
+use Sweph\SwephConfig;
+use Sweph\SwephFactory;
 
-$now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+require dirname(__DIR__) . '/vendor/autoload.php';
 
-echo "=== Rückläufigkeits-Check ({$now->format('Y-m-d H:i:s')} UTC) ===\n\n";
+$sweph = SwephFactory::create(
+    new SwephConfig(
+        ephemerisPath: dirname(__DIR__) . '/ephe',
+    ),
+);
 
 try {
+    $date = new DateTimeImmutable(
+        'now',
+        new DateTimeZone('UTC'),
+    );
+
+    $decimalHour = (int) $date->format('G')
+        + ((int) $date->format('i') / 60)
+        + ((int) $date->format('s') / 3600);
+
+    $julianDay = $sweph->time()->julianDay(
+        year: (int) $date->format('Y'),
+        month: (int) $date->format('n'),
+        day: (int) $date->format('j'),
+        decimalHour: $decimalHour,
+        calendar: Calendar::Gregorian,
+    );
+
+    $flags = CalculationFlag::combine(
+        CalculationFlag::SwissEphemeris,
+        CalculationFlag::Speed,
+    );
+
     $planets = [
         Planet::Mercury,
         Planet::Venus,
@@ -24,19 +50,42 @@ try {
         Planet::Pluto,
     ];
 
+    printf(
+        "Rückläufigkeiten am %s UTC\n",
+        $date->format('Y-m-d H:i:s'),
+    );
+
+    echo "============================================================\n\n";
+
+    $retrogradeCount = 0;
+
     foreach ($planets as $planet) {
-        $pos = Ephemeris::getPlanetPosition($planet, $now);
-        $isRetrograde = $pos->longitudeSpeed < 0.0;
+        $position = $sweph->planets()->calculateUt(
+            julianDayUt: $julianDay->value,
+            planet: $planet,
+            flags: $flags,
+        );
+
+        $isRetrograde = $position->longitudeSpeed < 0.0;
+
+        if ($isRetrograde) {
+            $retrogradeCount++;
+        }
 
         printf(
-            "%-10s | Speed: %6.3f°/Tag | Status: %s\n",
+            "%-10s %-11s Länge: %10.6f°  Geschwindigkeit: %+10.6f°/Tag\n",
             $planet->name,
-            $pos->longitudeSpeed,
-            $isRetrograde ? "🔴 RÜCKLÄUFIG (Retrograde)" : "🟢 DIREKT"
+            $isRetrograde ? 'rückläufig' : 'direkt',
+            $position->longitude,
+            $position->longitudeSpeed,
         );
     }
-} catch (EphemerisException $e) {
-    echo "Fehler: " . $e->getMessage() . "\n";
+
+    printf(
+        "\n%d von %d untersuchten Planeten sind rückläufig.\n",
+        $retrogradeCount,
+        count($planets),
+    );
 } finally {
-    Ephemeris::close();
+    $sweph->close();
 }

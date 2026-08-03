@@ -4,26 +4,22 @@ declare(strict_types=1);
 
 namespace Sweph\Enums;
 
+use InvalidArgumentException;
+
 enum Aspect: int
 {
-    case Conjunction = 0;   // 0°
-    case Sextile = 60;      // 60°
-    case Square = 90;       // 90°
-    case Trine = 120;       // 120°
-    case Opposition = 180;  // 180°
+    case Conjunction = 0;
+    case Sextile = 60;
+    case Square = 90;
+    case Trine = 120;
+    case Opposition = 180;
 
-    /**
-     * Gibt den Winkel in Grad zurück.
-     */
     public function angle(): float
     {
         return (float) $this->value;
     }
 
-    /**
-     * Gibt den Standard-Orbis (Toleranz) in Grad für den Aspekt zurück.
-     */
-    public function getDefaultOrbis(): float
+    public function defaultOrb(): float
     {
         return match ($this) {
             self::Conjunction, self::Opposition => 8.0,
@@ -32,19 +28,27 @@ enum Aspect: int
         };
     }
 
-    /**
-     * Prüft, ob der Winkel zwischen zwei Positionen innerhalb des angegebenen Orbis für diesen Aspekt liegt.
-     */
-    public function isWithinOrb(float $longitude1, float $longitude2, ?float $customOrb = null): bool
-    {
-        $orb = $customOrb ?? $this->getDefaultOrbis();
+    public function isWithinOrb(
+        float $longitude1,
+        float $longitude2,
+        ?float $customOrb = null,
+    ): bool {
+        $orb = $customOrb ?? $this->defaultOrb();
 
-        // Kürzesten Winkel auf dem 360°-Kreis berechnen
-        $diff = \abs($longitude1 - $longitude2) % 360.0;
-        if ($diff > 180.0) {
-            $diff = 360.0 - $diff;
+        if (!\is_finite($longitude1) || !\is_finite($longitude2)) {
+            throw new InvalidArgumentException('Longitudes must be finite.');
         }
 
-        return \abs($diff - $this->value) <= $orb;
+        if (!\is_finite($orb) || $orb < 0.0) {
+            throw new InvalidArgumentException('Orb must be finite and non-negative.');
+        }
+
+        $difference = \fmod(\abs($longitude1 - $longitude2), 360.0);
+
+        if ($difference > 180.0) {
+            $difference = 360.0 - $difference;
+        }
+
+        return \abs($difference - $this->angle()) <= $orb;
     }
 }

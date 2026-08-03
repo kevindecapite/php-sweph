@@ -6,8 +6,14 @@ namespace Sweph\Enums;
 
 enum HeliacalEventType: int
 {
-    case MorningFirst = 1;  // Morning first appearance (all visible planets/stars)
-    case EveningLast = 2;   // Evening last appearance (all visible planets/stars)
-    case EveningFirst = 3;  // Evening first appearance (Mercury, Venus, Moon)
-    case MorningLast = 4;   // Morning last appearance (Mercury, Venus, Moon)
+    case HeliacalRising = 1;
+    case HeliacalSetting = 2;
+    case EveningFirst = 3;
+    case MorningLast = 4;
+    case AcronychalRising = 5;
+    case AcronychalSetting = 6;
+
+    public const self MorningFirst = self::HeliacalRising;
+    public const self EveningLast = self::HeliacalSetting;
+    public const self CosmicalSetting = self::AcronychalSetting;
 }

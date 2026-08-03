@@ -1,42 +1,124 @@
-FROM php:8.4-cli-alpine
+FROM php:8.4-cli
 
-# 1. System-Abhängigkeiten und Build-Tools installieren
-RUN apk add --no-cache \
-    git \
-    build-base \
-    autoconf \
-    bash \
-    alpine-sdk
+# --------------------------------------------------------------------
+# Systempakete
+# --------------------------------------------------------------------
 
-# 2. Arbeitsverzeichnis vorbereiten
-WORKDIR /usr/src/php-sweph-ext
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        autoconf \
+        build-essential \
+        pkg-config \
+        git \
+        unzip \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# 3. Lokalen ext/ Ordner kopieren
-COPY ext/ .
+# Composer übernehmen
+COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
-# 4. "swephp_arginfo.h" generieren falls nötig
-RUN if [ ! -f "swephp_arginfo.h" ] && [ -f "swephp.stub.php" ]; then \
-        php /usr/local/lib/php/build/gen_stub.php swephp.stub.php; \
-    fi
+# --------------------------------------------------------------------
+# Swiss Ephemeris Quellen
+# --------------------------------------------------------------------
 
-# 5. SCHRITT 1: Ausschließlich die Core-Dateien der Swiss Ephemeris bauen
-RUN cd sweph/src \
-    && cc -c -O2 -Wall -fPIC swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c \
-    && ar r libswe.a swedate.o swehouse.o swejpl.o swemmoon.o swemplan.o sweph.o swephlib.o swecl.o swehel.o
+WORKDIR /opt/swephp
 
-# 6. SCHRITT 2: PHP-Extension initialisieren, konfigurieren und kompilieren
-# Wichtig: Am Ende aktivieren wir das Modul "swephp"
-RUN phpize \
-    && ./configure --with-sweph=shared,sweph/src \
-    && make \
-    && make install \
-    && docker-php-ext-enable swephp
+COPY native/swisseph/ /opt/swephp/native/swisseph/
 
-# 7. Composer installieren
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+# Alte Artefakte entfernen
+RUN find /opt/swephp/native/swisseph \
+        -maxdepth 1 \
+        -type f \
+        \( \
+            -name "*.o" \
+            -o -name "libswe.a" \
+            -o -name "libswe.so" \
+            -o -name "swetest" \
+        \) \
+        -delete
 
-# 8. finalen App-Ordner vorbereiten
-RUN mkdir -p /app /opt/sweph/ephe
+# libswe.a bauen
+RUN make -C /opt/swephp/native/swisseph \
+        CFLAGS="-O2 -fPIC" \
+        libswe.a
+
+RUN test -s /opt/swephp/native/swisseph/libswe.a
+
+# --------------------------------------------------------------------
+# PHP Extension
+# --------------------------------------------------------------------
+
+COPY ext/ /opt/swephp/ext/
+
+WORKDIR /opt/swephp/ext
+
+RUN phpize --clean || true
+
+RUN phpize
+
+RUN ./configure \
+        --enable-swephp=shared \
+        --with-swisseph-src=/opt/swephp/native/swisseph
+
+# Kompilieren
+RUN make -j"$(nproc)" V=1
+
+# --------------------------------------------------------------------
+# Diagnose
+# --------------------------------------------------------------------
+
+RUN echo "==============================" \
+ && echo "Extension Build Output" \
+ && echo "==============================" \
+ && pwd \
+ && find . -maxdepth 3 -type f | sort
+
+RUN echo "==============================" \
+ && echo "Shared Objects" \
+ && echo "==============================" \
+ && find . -name "*.so" -o -name "*.la" -o -name "*.lo"
+
+# Prüfen ob die Extension erzeugt wurde
+RUN test -f modules/swephp.so
+
+# --------------------------------------------------------------------
+# Installation
+# --------------------------------------------------------------------
+
+RUN make install
+
+RUN docker-php-ext-enable swephp
+
+RUN php --ri swephp
+
+RUN php -r "echo swe_version(), PHP_EOL;"
+
+# --------------------------------------------------------------------
+# Release-Artefakte
+# --------------------------------------------------------------------
+
+RUN mkdir -p /dist/linux/php84
+
+RUN cp modules/swephp.so /dist/linux/php84/swephp.so
+
+RUN ls -lh /dist/linux/php84
+
+# --------------------------------------------------------------------
+# Anwendung
+# --------------------------------------------------------------------
+
 WORKDIR /app
 
-ENV COMPOSER_ALLOW_SUPERUSER=1
+COPY composer.json composer.lock* ./
+
+RUN composer install \
+    --no-interaction \
+    --prefer-dist \
+    --optimize-autoloader
+
+COPY src/ ./src/
+COPY tests/ ./tests/
+COPY examples/ ./examples/
+COPY README.md ./
+
+CMD ["tail", "-f", "/dev/null"]

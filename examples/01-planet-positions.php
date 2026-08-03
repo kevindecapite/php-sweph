@@ -2,21 +2,43 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../vendor/autoload.php';
-
-use Sweph\Ephemeris;
+use Sweph\Enums\CalculationFlag;
+use Sweph\Enums\Calendar;
 use Sweph\Enums\Planet;
-use Sweph\EphemerisException;
+use Sweph\SwephConfig;
+use Sweph\SwephFactory;
 
-// Ephemeriden-Pfad optional explizit setzen (greift sonst auf das Standard-Verzeichnis zurück)
-Ephemeris::setEphePath('/opt/sweph/ephe');
+require dirname(__DIR__) . '/vendor/autoload.php';
 
-// Aktueller Zeitpunkt (UTC)
-$now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
-
-echo "=== Aktuelle Planetenpositionen ({$now->format('Y-m-d H:i:s')} UTC) ===\n\n";
+$sweph = SwephFactory::create(
+    new SwephConfig(
+        ephemerisPath: dirname(__DIR__) . '/ephe',
+    ),
+);
 
 try {
+    $date = new DateTimeImmutable(
+        '2026-07-15 12:00:00',
+        new DateTimeZone('UTC'),
+    );
+
+    $decimalHour = (int) $date->format('G')
+        + ((int) $date->format('i') / 60)
+        + ((int) $date->format('s') / 3600);
+
+    $julianDay = $sweph->time()->julianDay(
+        year: (int) $date->format('Y'),
+        month: (int) $date->format('n'),
+        day: (int) $date->format('j'),
+        decimalHour: $decimalHour,
+        calendar: Calendar::Gregorian,
+    );
+
+    $flags = CalculationFlag::combine(
+        CalculationFlag::SwissEphemeris,
+        CalculationFlag::Speed,
+    );
+
     $planets = [
         Planet::Sun,
         Planet::Moon,
@@ -25,22 +47,37 @@ try {
         Planet::Mars,
         Planet::Jupiter,
         Planet::Saturn,
+        Planet::Uranus,
+        Planet::Neptune,
+        Planet::Pluto,
     ];
 
+    printf(
+        "Planetenpositionen für %s UTC\n",
+        $date->format('Y-m-d H:i:s'),
+    );
+
+    printf(
+        "Julianischer Tag: %.8f\n\n",
+        $julianDay->value,
+    );
+
     foreach ($planets as $planet) {
-        $position = Ephemeris::getPlanetPosition($planet, $now);
+        $position = $sweph->planets()->calculateUt(
+            julianDayUt: $julianDay->value,
+            planet: $planet,
+            flags: $flags,
+        );
 
         printf(
-            "%-10s | Länge: %6.2f° | Breite: %5.2f° | Distanz: %6.4f AE | Speed: %5.2f°/Tag\n",
+            "%-10s Länge: %10.6f°  Breite: %9.6f°  Distanz: %12.8f AU  Geschwindigkeit: %+10.6f°/Tag\n",
             $planet->name,
             $position->longitude,
             $position->latitude,
             $position->distance,
-            $position->longitudeSpeed
+            $position->longitudeSpeed,
         );
     }
-} catch (EphemerisException $e) {
-    echo "Fehler bei der Berechnung: " . $e->getMessage() . "\n";
 } finally {
-    Ephemeris::close();
+    $sweph->close();
 }

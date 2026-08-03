@@ -1,6 +1,6 @@
 {
     "name": "drt04-dev/php-swiss-ephemeris",
-    "description": "Modern PHP 8.4+ Object-Oriented Wrapper for Swiss Ephemeris",
+    "description": "Modern, strongly typed PHP 8.4+ SDK for the Swiss Ephemeris",
     "type": "library",
     "license": "MIT",
     "keywords": [
@@ -8,15 +8,23 @@
         "astronomy",
         "swiss-ephemeris",
         "ephemeris",
-        "sweph"
+        "sweph",
+        "php-extension",
+        "planetary-calculations"
+    ],
+    "authors": [
+        {
+            "name": "drt04-dev",
+            "role": "Developer"
+        }
     ],
     "require": {
-        "php": ">=8.4",
+        "php": "^8.4",
         "ext-swephp": "*"
     },
     "require-dev": {
-        "phpunit/phpunit": "^11.0",
-        "phpstan/phpstan": "^2.0"
+        "phpstan/phpstan": "^2.0",
+        "phpunit/phpunit": "^11.0"
     },
     "autoload": {
         "psr-4": {
@@ -29,11 +37,31 @@
         }
     },
     "config": {
+        "allow-plugins": {},
         "optimize-autoloader": true,
         "sort-packages": true
     },
     "scripts": {
-        "test": "phpunit",
-        "phpstan": "phpstan analyse src"
+    "test": "phpunit",
+    "test:unit": "phpunit --testsuite unit",
+    "test:integration": "phpunit --testsuite integration",
+    "phpstan": "phpstan analyse src tests",
+    "lint": "find src tests -name '*.php' -print0 | xargs -0 -n1 php -l",
+    "check": [
+        "@lint",
+        "@phpstan",
+        "@test"
+    ]
+},
+    "scripts-descriptions": {
+        "test": "Führt die PHPUnit-Test-Suite aus.",
+        "test:coverage": "Führt PHPUnit mit einer textbasierten Coverage-Ausgabe aus.",
+        "analyse": "Führt die statische Analyse mit PHPStan aus.",
+        "lint": "Prüft alle PHP-Dateien auf Syntaxfehler.",
+        "check": "Führt Syntaxprüfung, PHPStan und PHPUnit nacheinander aus."
+    },
+    "support": {
+        "issues": "https://github.com/drt04-dev/PHP-Swiss-Ephemeris/issues",
+        "source": "https://github.com/drt04-dev/PHP-Swiss-Ephemeris"
     }
 }
